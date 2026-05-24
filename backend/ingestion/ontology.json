@@ -1,0 +1,670 @@
+{
+  "version": "1.1",
+  "description": "Онтология предметной области Synapse Corp. Используется entity extractor для нормализации сущностей перед записью в Neo4j. Одна сущность под разными именами создаёт один узел, а не дубли.",
+  "entity_types": [
+    "Role",
+    "System",
+    "Process",
+    "Policy",
+    "Standard",
+    "Document"
+  ],
+  "relationship_types": [
+    "HAS_SECTION",
+    "GOVERNED_BY",
+    "REFERENCES",
+    "REQUIRES",
+    "USES",
+    "APPLIES_TO",
+    "DEPENDS_ON",
+    "GOVERNS",
+    "DEFINES",
+    "MANAGED_BY",
+    "BELONGS_TO"
+  ],
+  "entities": [
+    {
+      "canonical": "Junior Engineer",
+      "type": "Role",
+      "access_level": 1,
+      "aliases": [
+        "junior",
+        "джун",
+        "джуниор",
+        "младший разработчик",
+        "новый сотрудник",
+        "начинающий разработчик",
+        "junior developer",
+        "junior dev"
+      ]
+    },
+    {
+      "canonical": "Middle Engineer",
+      "type": "Role",
+      "access_level": 2,
+      "aliases": [
+        "middle",
+        "мидл",
+        "разработчик",
+        "developer",
+        "middle developer",
+        "middle dev",
+        "software engineer"
+      ]
+    },
+    {
+      "canonical": "Senior Engineer",
+      "type": "Role",
+      "access_level": 3,
+      "aliases": [
+        "senior",
+        "сеньор",
+        "старший разработчик",
+        "senior developer",
+        "senior dev",
+        "lead developer"
+      ]
+    },
+    {
+      "canonical": "Tech Lead",
+      "type": "Role",
+      "access_level": 3,
+      "aliases": [
+        "тимлид",
+        "team lead",
+        "teamlead",
+        "tech lead",
+        "технический руководитель",
+        "ведущий разработчик",
+        "тех лид",
+        "тех. лид"
+      ]
+    },
+    {
+      "canonical": "Engineering Manager",
+      "type": "Role",
+      "access_level": 4,
+      "aliases": [
+        "менеджер",
+        "manager",
+        "руководитель",
+        "engineering manager",
+        "em",
+        "em manager"
+      ]
+    },
+    {
+      "canonical": "Admin",
+      "type": "Role",
+      "access_level": 5,
+      "aliases": [
+        "администратор",
+        "admin",
+        "администратор системы",
+        "system admin",
+        "sysadmin",
+        "аналитик",
+        "analyst"
+      ]
+    },
+    {
+      "canonical": "CTO",
+      "type": "Role",
+      "access_level": 5,
+      "aliases": [
+        "cto",
+        "chief technology officer",
+        "технический директор",
+        "тех директор"
+      ]
+    },
+    {
+      "canonical": "HR",
+      "type": "Role",
+      "access_level": 4,
+      "aliases": [
+        "hr",
+        "hr-менеджер",
+        "hr менеджер",
+        "кадровик",
+        "менеджер по персоналу",
+        "рекрутер"
+      ]
+    },
+    {
+      "canonical": "DevOps",
+      "type": "Role",
+      "access_level": 3,
+      "aliases": [
+        "devops",
+        "девопс",
+        "devops engineer",
+        "инфраструктурный инженер",
+        "sre",
+        "site reliability engineer"
+      ]
+    },
+    {
+      "canonical": "Security Officer",
+      "type": "Role",
+      "access_level": 5,
+      "aliases": [
+        "ciso",
+        "security officer",
+        "офицер безопасности",
+        "специалист по иб",
+        "информационная безопасность"
+      ]
+    },
+    {
+      "canonical": "GitLab",
+      "type": "System",
+      "aliases": [
+        "gitlab",
+        "гитлаб",
+        "наш gitlab",
+        "система контроля версий",
+        "репозиторий",
+        "scm",
+        "source control"
+      ]
+    },
+    {
+      "canonical": "Jira",
+      "type": "System",
+      "aliases": [
+        "jira",
+        "джира",
+        "таск-трекер",
+        "трекер задач",
+        "task tracker",
+        "issue tracker",
+        "проектный трекер"
+      ]
+    },
+    {
+      "canonical": "Slack",
+      "type": "System",
+      "aliases": [
+        "slack",
+        "слак",
+        "корпоративный мессенджер",
+        "рабочий чат",
+        "мессенджер"
+      ]
+    },
+    {
+      "canonical": "Confluence",
+      "type": "System",
+      "aliases": [
+        "confluence",
+        "конфлюенс",
+        "вики",
+        "wiki",
+        "корпоративная вики",
+        "knowledge base"
+      ]
+    },
+    {
+      "canonical": "Qdrant",
+      "type": "System",
+      "aliases": [
+        "qdrant",
+        "векторная база данных",
+        "vector db",
+        "vector database",
+        "векторное хранилище"
+      ]
+    },
+    {
+      "canonical": "Neo4j",
+      "type": "System",
+      "aliases": [
+        "neo4j",
+        "граф база данных",
+        "graph db",
+        "graph database",
+        "графовая бд"
+      ]
+    },
+    {
+      "canonical": "vLLM",
+      "type": "System",
+      "aliases": [
+        "vllm",
+        "llm сервер",
+        "llm serving",
+        "language model server"
+      ]
+    },
+    {
+      "canonical": "Ollama",
+      "type": "System",
+      "aliases": [
+        "ollama",
+        "олама",
+        "локальная языковая модель",
+        "local llm"
+      ]
+    },
+    {
+      "canonical": "Qwen",
+      "type": "System",
+      "aliases": [
+        "qwen",
+        "qwen2.5",
+        "qwen 2.5",
+        "языковая модель",
+        "language model",
+        "llm",
+        "нейросеть",
+        "модель"
+      ]
+    },
+    {
+      "canonical": "LangGraph",
+      "type": "System",
+      "aliases": [
+        "langgraph",
+        "лангграф",
+        "оркестратор",
+        "orchestrator",
+        "граф агента",
+        "agent graph",
+        "state machine"
+      ]
+    },
+    {
+      "canonical": "FastAPI",
+      "type": "System",
+      "aliases": [
+        "fastapi",
+        "фастапи",
+        "api gateway",
+        "апи",
+        "api",
+        "rest api",
+        "бэкенд"
+      ]
+    },
+    {
+      "canonical": "Langfuse",
+      "type": "System",
+      "aliases": [
+        "langfuse",
+        "трейсинг",
+        "tracing",
+        "observability",
+        "мониторинг llm",
+        "llm observability"
+      ]
+    },
+    {
+      "canonical": "Grafana",
+      "type": "System",
+      "aliases": [
+        "grafana",
+        "графана",
+        "дашборд метрик",
+        "metrics dashboard"
+      ]
+    },
+    {
+      "canonical": "Prometheus",
+      "type": "System",
+      "aliases": [
+        "prometheus",
+        "прометеус",
+        "сбор метрик",
+        "metrics collection"
+      ]
+    },
+    {
+      "canonical": "OpenTelemetry",
+      "type": "System",
+      "aliases": [
+        "opentelemetry",
+        "otel",
+        "опентелеметри",
+        "трейсинг стандарт",
+        "otlp"
+      ]
+    },
+    {
+      "canonical": "Docker",
+      "type": "System",
+      "aliases": [
+        "docker",
+        "докер",
+        "docker compose",
+        "контейнер",
+        "контейнеризация",
+        "container"
+      ]
+    },
+    {
+      "canonical": "VPN",
+      "type": "System",
+      "aliases": [
+        "vpn",
+        "впн",
+        "корпоративный vpn",
+        "virtual private network",
+        "туннель"
+      ]
+    },
+    {
+      "canonical": "SSO",
+      "type": "System",
+      "aliases": [
+        "sso",
+        "single sign-on",
+        "единый вход",
+        "аутентификация",
+        "okta",
+        "jumpcloud"
+      ]
+    },
+    {
+      "canonical": "Yandex Cloud",
+      "type": "System",
+      "aliases": [
+        "yandex cloud",
+        "яндекс облако",
+        "yc",
+        "облачный провайдер"
+      ]
+    },
+    {
+      "canonical": "Онбординг",
+      "type": "Process",
+      "aliases": [
+        "онбординг",
+        "onboarding",
+        "адаптация",
+        "адаптация сотрудника",
+        "введение в должность",
+        "испытательный срок"
+      ]
+    },
+    {
+      "canonical": "Код-ревью",
+      "type": "Process",
+      "aliases": [
+        "код-ревью",
+        "code review",
+        "ревью кода",
+        "проверка кода",
+        "ревью",
+        "review",
+        "pr review",
+        "mr review"
+      ]
+    },
+    {
+      "canonical": "Деплой",
+      "type": "Process",
+      "aliases": [
+        "деплой",
+        "deploy",
+        "deployment",
+        "выкатка",
+        "релиз",
+        "release",
+        "публикация",
+        "pipeline выкатки",
+        "ci/cd",
+        "cicd",
+        "релизный процесс"
+      ]
+    },
+    {
+      "canonical": "Ingestion Pipeline",
+      "type": "Process",
+      "aliases": [
+        "ingestion",
+        "загрузка документов",
+        "индексация",
+        "обработка документов",
+        "ingest",
+        "pipeline загрузки"
+      ]
+    },
+    {
+      "canonical": "Согласование доступа",
+      "type": "Process",
+      "aliases": [
+        "согласование доступа",
+        "запрос доступа",
+        "выдача доступа",
+        "access request",
+        "доступ к системам",
+        "предоставление доступа"
+      ]
+    },
+    {
+      "canonical": "Аудит доступов",
+      "type": "Process",
+      "aliases": [
+        "аудит доступов",
+        "access audit",
+        "проверка доступов",
+        "ревью доступов",
+        "аудит прав"
+      ]
+    },
+    {
+      "canonical": "Performance Review",
+      "type": "Process",
+      "aliases": [
+        "performance review",
+        "перформанс ревью",
+        "оценка сотрудника",
+        "ревью сотрудника",
+        "аттестация",
+        "грейдирование"
+      ]
+    },
+    {
+      "canonical": "Реагирование на инциденты",
+      "type": "Process",
+      "aliases": [
+        "реагирование на инциденты",
+        "incident response",
+        "инцидент",
+        "постмортем",
+        "postmortem",
+        "разбор инцидента"
+      ]
+    },
+    {
+      "canonical": "Git Workflow",
+      "type": "Process",
+      "aliases": [
+        "git workflow",
+        "gitflow",
+        "git flow",
+        "ветвление",
+        "branching strategy",
+        "работа с ветками"
+      ]
+    },
+    {
+      "canonical": "Управление техническим долгом",
+      "type": "Process",
+      "aliases": [
+        "технический долг",
+        "tech debt",
+        "рефакторинг",
+        "refactoring",
+        "погашение долга",
+        "техдолг"
+      ]
+    },
+    {
+      "canonical": "Бюджетирование",
+      "type": "Process",
+      "aliases": [
+        "бюджетирование",
+        "budgeting",
+        "бюджет",
+        "бюджет проекта",
+        "opex",
+        "capex",
+        "финансирование",
+        "согласование бюджета"
+      ]
+    },
+    {
+      "canonical": "Найм сотрудника",
+      "type": "Process",
+      "aliases": [
+        "найм",
+        "hiring",
+        "рекрутинг",
+        "recruitment",
+        "подбор персонала",
+        "собеседование",
+        "interview",
+        "оффер",
+        "offer"
+      ]
+    },
+    {
+      "canonical": "Планирование спринта",
+      "type": "Process",
+      "aliases": [
+        "спринт",
+        "sprint",
+        "планирование спринта",
+        "sprint planning",
+        "итерация",
+        "scrum",
+        "agile",
+        "планирование"
+      ]
+    },
+    {
+      "canonical": "Политика информационной безопасности",
+      "type": "Policy",
+      "aliases": [
+        "политика иб",
+        "политика информационной безопасности",
+        "information security policy",
+        "иб политика",
+        "политика безопасности",
+        "security policy"
+      ]
+    },
+    {
+      "canonical": "RBAC",
+      "type": "Policy",
+      "aliases": [
+        "rbac",
+        "разграничение доступа",
+        "role-based access control",
+        "ролевой доступ",
+        "управление доступом",
+        "access control",
+        "матрица доступов"
+      ]
+    },
+    {
+      "canonical": "Политика конфиденциальности",
+      "type": "Policy",
+      "aliases": [
+        "конфиденциальность",
+        "nda",
+        "соглашение о неразглашении",
+        "confidentiality",
+        "коммерческая тайна",
+        "персональные данные",
+        "фз-152"
+      ]
+    },
+    {
+      "canonical": "Кодекс поведения",
+      "type": "Policy",
+      "aliases": [
+        "кодекс поведения",
+        "code of conduct",
+        "корпоративная этика",
+        "этика",
+        "нормы поведения",
+        "правила поведения"
+      ]
+    },
+    {
+      "canonical": "Политика удалённой работы",
+      "type": "Policy",
+      "aliases": [
+        "удалённая работа",
+        "remote work",
+        "ремоут",
+        "remote policy",
+        "работа из дома",
+        "wfh",
+        "гибридный формат"
+      ]
+    },
+    {
+      "canonical": "Стандарт документации",
+      "type": "Standard",
+      "aliases": [
+        "стандарт документации",
+        "documentation standard",
+        "стандарт написания",
+        "readme стандарт",
+        "стандарт readme"
+      ]
+    },
+    {
+      "canonical": "ГОСТ Р ИСО/МЭК 27001",
+      "type": "Standard",
+      "aliases": [
+        "гост 27001",
+        "iso 27001",
+        "iso/iec 27001",
+        "гост иб",
+        "смиб",
+        "isms"
+      ]
+    },
+    {
+      "canonical": "Архитектурный стандарт",
+      "type": "Standard",
+      "aliases": [
+        "архитектурный стандарт",
+        "architecture standard",
+        "стандарт микросервисов",
+        "microservice standard",
+        "architectural guidelines"
+      ]
+    },
+    {
+      "canonical": "ADR",
+      "type": "Standard",
+      "aliases": [
+        "adr",
+        "architecture decision record",
+        "архитектурное решение",
+        "architecture decision",
+        "решение по архитектуре"
+      ]
+    },
+    {
+      "canonical": "Стандарт кодирования",
+      "type": "Standard",
+      "aliases": [
+        "стандарт кодирования",
+        "coding standard",
+        "code style",
+        "стиль кода",
+        "линтер",
+        "linter",
+        "форматирование кода",
+        "code formatting"
+      ]
+    }
+  ]
+}

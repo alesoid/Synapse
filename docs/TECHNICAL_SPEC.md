@@ -1,10 +1,11 @@
 # Synapse — Техническое Задание (TECHNICAL_SPECIFICATION)
 
-**Версия:** 1.5  
+**Версия:** 1.6  
 **Дата:** 17 мая 2026  
 **Автор:** [Алеся Мороз]  
 **Статус:** Утверждён  
-**Область действия:** данный документ описывает требования к MVP (этап 2). PoC-требования выделены в колонке Этап — они реализуются первыми (до 25 мая 2026) и входят в состав MVP. Scale-требования намеренно исключены из таблиц FR и описаны отдельно в разделе 13.
+**Область действия:** документ описывает MVP для защиты проектной работы 3 июня 2026 года. MVP реализуется в двух режимах: `local-lite` для разработки и тестирования на Mac M3 8 GB RAM с mock/lightweight backend-ами и `gpu-demo` для финального запуска через Docker Compose на сервере с RTX 4090 24 GB VRAM. PoC-функции реализуются первыми и входят в MVP; Scale-функции вынесены за рамки защиты.
+
 
 **История изменений:**
 | Версия | Дата | Изменения |
@@ -15,6 +16,7 @@
 | 1.3 | 11 мая 2026 | Multi-Agent Architecture и Document Preparation Pipeline (OCR + Vision) перенесены из Scale в MVP; добавлен OpenTelemetry; обновлены FR, tech stack, Out of Scope |
 | 1.4 | 17 мая 2026 | FR декомпозированы до атомарных; добавлена колонка Тип к FR; добавлена колонка Источник к NFR; добавлена матрица трассируемости FR → AC |
 | 1.5 | 17 мая 2026 | Добавлена колонка Этап (PoC / MVP) к FR; добавлена строка Область действия в шапку |
+| 1.6 | 21 мая 2026 | Уточнены профили `local-lite` и `gpu-demo`, дата защиты 3 июня 2026, снижены риски MVP: OCR/Vision/streaming/расширенный Explorer вынесены в Should Have |
 
 ---
 
@@ -58,16 +60,26 @@ Synapse — корпоративная платформа интеллектуа
 
 ## 4. Этапы реализации (PoC → MVP → Scale)
 
-### Этап 1: PoC (Proof of Concept)
+### Этап 1: PoC / local-lite
 **Срок:** до 25 мая 2026  
-**Результат:** рабочий прототип с базовым GraphRAG pipeline, подтверждение технической гипотезы
+**Среда:** Mac M3 8 GB RAM  
+**Результат:** рабочий прототип с Markdown ingestion, mock LLM, mock/lightweight embeddings, базовым GraphRAG retrieval, RBAC smoke-тестами и проверяемым LangGraph flow.
 
-### Этап 2: MVP (текущий ТЗ)
-**Срок:** до 6 июня 2026  
-**Результат:** полнофункциональная система, готовая к демонстрации и защите диплома
+В этом режиме не запускается полный LLM/observability stack. Цель local-lite — быстро разрабатывать и проверять бизнес-логику без зависимости от GPU.
 
-### Этап 3: Scale (вне скоупа текущего ТЗ)
-**Результат:** production-ready платформа с Kubernetes, JWT, полноценным Multimodal RAG, интеграцией с Corporate Systems и Identity Provider
+### Этап 2: MVP / gpu-demo
+**Срок:** до 30 мая 2026  
+**Среда:** Docker Compose на сервере с RTX 4090 24 GB VRAM  
+**Результат:** демонстрируемая End-to-End система: vLLM + Qwen2.5-14B-AWQ, Qdrant, Neo4j, FastAPI, Web UI, Langfuse, Prometheus/Grafana, evaluation report и load test report.
+
+MVP должен показать ключевые требования курса: локальную open-source LLM, GraphRAG, LangGraph/stateful pipeline, RBAC до передачи контекста в LLM, Guardrails, разделение Control Plane / Data Plane и измеримые метрики качества/производительности.
+
+### Этап 3: Scale
+**Срок:** к определению по результатам тестирования MVP  
+**Среда:** к определению по результатам тестирования MVP  
+**Результат:** архитектурная проработка перехода Synapse к production-ready платформе: JWT/LDAP/AD, Kubernetes/Helm, коннекторы к корпоративным системам, MLOps pipeline, production HA/SLA, расширенный multimodal RAG и автоматическая классификация `access_level`.
+
+Функции этапа Scale не входят в MVP и используются как roadmap промышленного развития системы.
 
 > В MVP Vision используется только как опциональный preprocessing-слой при ingestion (`Qwen2.5-VL` описывает страницы со схемами/чертежами). Полноценный Multimodal RAG в Scale означает пользовательские запросы и retrieval/generation по изображениям, таблицам и схемам как первичным источникам.
 
@@ -83,7 +95,12 @@ Synapse — корпоративная платформа интеллектуа
 
 > **Этапы реализации:**
 > - `PoC` — реализуется в рамках Proof of Concept (до 25 мая 2026); цель — подтвердить техническую гипотезу GraphRAG
-> - `MVP` — реализуется в рамках MVP (до 6 июня 2026); цель — полнофункциональная система для защиты диплома
+> - `MVP` — реализуется в рамках MVP / gpu-demo (до 30 мая 2026); цель — подготовить демонстрируемую систему для защиты 3 июня 2026
+
+> **Граница MVP:** обязательный путь защиты — Markdown corpus → ingestion → Qdrant/Neo4j → hybrid retrieval → RBAC → LangGraph pipeline → ответ с источниками → confidence_score → traces/metrics → evaluation/load report.
+>
+> OCR, Vision preprocessing, streaming response и расширенный Graph Explorer считаются `Should Have`: они выполняются только если не угрожают стабильности основного End-to-End pipeline.
+
 
 ### 5.1 Q&A режим
 
@@ -101,8 +118,8 @@ Synapse — корпоративная платформа интеллектуа
 
 | ID | Требование | Тип | Этап | Приоритет | AC |
 |---|---|---|---|---|---|
-| FR-07 | Admin/Analyst видит визуализацию графа знаний в React UI (react-force-graph) | Functional | MVP | Must Have | AC-04 |
-| FR-08 | Клик по узлу графа показывает связанные документы и отношения | Functional | MVP | Must Have | AC-04 |
+| FR-07 | Admin/Analyst может получить данные графа знаний через API или Neo4j Browser; полноценная React-визуализация является расширением | Functional | MVP | Should Have | AC-04 |
+| FR-08 | Клик по узлу графа в React UI показывает связанные документы и отношения | Functional | MVP | Should Have | — |
 | FR-09 | Explorer режим доступен только пользователям с ролью Admin (access_level=5) | Security | MVP | Must Have | AC-03 |
 
 ### 5.3 Document Preparation Pipeline
@@ -134,7 +151,7 @@ Document Preparation Pipeline — обязательный слой подгот
 | ID | Требование | Тип | Этап | Приоритет | AC |
 |---|---|---|---|---|---|
 | FR-10 | Парсер извлекает чистый текст из PDF, Markdown, CSV, DOCX, XLSX с удалением артефактов форматирования (колонтитулы, водяные знаки, служебные символы) | Functional | PoC | Must Have | AC-01 |
-| FR-10a | **[Слой 1]** Для отсканированных PDF (нативный текст < 50 токенов на страницу) система применяет OCR через easyocr (ru+en) на растеризованных страницах (300 DPI) | Functional | MVP | Must Have | AC-01 |
+| FR-10a | **[Слой 1, опционально]** Для отсканированных PDF (нативный текст < 50 токенов на страницу) система применяет OCR через easyocr (ru+en) на растеризованных страницах (300 DPI) | Functional | MVP | Should Have | AC-01 |
 | FR-10b | **[Слой 2, опционально]** Для страниц с чертежами и схемами (текст < 50 токенов после OCR) система генерирует текстовое описание через Qwen2.5-VL-7B; активируется через `VISION_ENABLED=true`; запускается только при ingestion, не конкурирует с основной моделью за VRAM | AI-specific | MVP | Should Have | — |
 | FR-11 | Структурирование выделяет логические разделы документа по заголовкам; каждый раздел становится отдельным узлом типа `Section` в Neo4j | Functional | PoC | Must Have | AC-04 |
 | FR-12 | Нормализация приводит роли, названия систем и процессов к единому словарю Synapse Corp (например: «тимлид» → `Tech Lead`, «наш gitlab» → `GitLab`) | AI-specific | MVP | Should Have | AC-13 |
@@ -150,11 +167,11 @@ Document Preparation Pipeline — обязательный слой подгот
 
 | ID | Требование | Тип | Этап | Приоритет | AC |
 |---|---|---|---|---|---|
-| FR-16 | Система принимает документы форматов PDF, Markdown, CSV, DOCX, XLSX | Functional | PoC | Must Have | AC-01 |
+| FR-16 | Система принимает Markdown-документы из `docs/corpus/adapted`; поддержка PDF, CSV, DOCX, XLSX относится к расширению Document Preparation Pipeline | Functional | PoC | Must Have | AC-01 |
 | FR-17a | Система выполняет chunking с размером 500 токенов | Functional | PoC | Must Have | AC-04 |
 | FR-17b | Система выполняет chunking с overlap 50 токенов между соседними чанками | Functional | PoC | Must Have | AC-04 |
-| FR-18a | Система извлекает сущности из документов через LLM в формате JSON | AI-specific | PoC | Must Have | AC-04 |
-| FR-18b | Система извлекает связи между сущностями через LLM в формате JSON | AI-specific | PoC | Must Have | AC-04 |
+| FR-18a | Система извлекает сущности из документов: в `local-lite` через deterministic/mock extractor, в `gpu-demo` через LLM в JSON-формате | AI-specific | PoC | Must Have | AC-04 |
+| FR-18b | Система извлекает связи между сущностями: в `local-lite` через rules/mock extractor, в `gpu-demo` через LLM в JSON-формате | AI-specific | PoC | Must Have | AC-04 |
 | FR-19a | Система записывает чанки с эмбеддингами в Qdrant | Functional | PoC | Must Have | AC-02 |
 | FR-19b | Система записывает граф сущностей в Neo4j | Functional | PoC | Must Have | AC-04 |
 | FR-20 | Каждый чанк в Qdrant и каждый узел в Neo4j размечается `access_level` (1–5) при загрузке | Security | MVP | Must Have | AC-03 |
@@ -168,7 +185,7 @@ Document Preparation Pipeline — обязательный слой подгот
 | FR-22b | Графовый траверсал в Neo4j возвращает только узлы с `access_level ≤ уровню пользователя` | Security | MVP | Must Have | AC-03 |
 | FR-23 | Попытка доступа к закрытому документу возвращает HTTP 403 с информативным сообщением | Security | MVP | Must Have | AC-03 |
 
-> **MVP:** роль передаётся через HTTP заголовок `X-User-Role`. JWT и интеграция с Identity Provider (LDAP/AD) — Scale-этап (см. раздел 12).
+> **MVP:** роль передаётся через HTTP заголовок `X-User-Role`. JWT и интеграция с Identity Provider (LDAP/AD) — Scale-этап (см. раздел 13).
 
 ### 5.6 User Channels
 
@@ -208,12 +225,12 @@ Document Preparation Pipeline — обязательный слой подгот
 
 | ID | Требование | Тип | Этап | Приоритет | AC |
 |---|---|---|---|---|---|
-| FR-45 | OrchestratorAgent запускает VectorRetrieverAgent и GraphRetrieverAgent параллельно через LangGraph `Send()` API | AI-specific | MVP | Must Have | AC-02 |
-| FR-46a | VectorRetrieverAgent применяет RBAC фильтр при поиске в Qdrant | Security | MVP | Must Have | AC-03 |
-| FR-46b | GraphRetrieverAgent применяет RBAC фильтр при траверсале Neo4j | Security | MVP | Must Have | AC-03 |
-| FR-47a | CriticAgent получает вопрос + ответ + источники и возвращает `quality_score` в формате JSON | AI-specific | MVP | Must Have | AC-02 |
-| FR-47b | CriticAgent возвращает текстовый `feedback` с обоснованием оценки | AI-specific | MVP | Must Have | AC-02 |
-| FR-48a | При `quality_score < 3` OrchestratorAgent повторяет параллельный retrieval | AI-specific | MVP | Must Have | AC-02 |
+| FR-45 | Условное ребро `dispatch_retrievers` от `prepare_query` запускает `vector_retriever` и `graph_retriever` параллельно через LangGraph `Send()` API | AI-specific | MVP | Must Have | AC-02 |
+| FR-46a | Нода `vector_retriever` применяет RBAC фильтр при поиске в Qdrant | Security | MVP | Must Have | AC-03 |
+| FR-46b | Нода `graph_retriever` применяет RBAC фильтр при траверсале Neo4j | Security | MVP | Must Have | AC-03 |
+| FR-47a | Нода `critic` получает вопрос + ответ + источники и возвращает `quality_score` в формате JSON | AI-specific | MVP | Must Have | AC-02 |
+| FR-47b | Нода `critic` возвращает текстовый `feedback` с обоснованием оценки | AI-specific | MVP | Must Have | AC-02 |
+| FR-48a | При `quality_score < retry_threshold` условное ребро `should_retry` от `confidence_score` повторяет параллельный retrieval через `Send()` | AI-specific | MVP | Must Have | AC-02 |
 | FR-48b | Максимальное число итераций retry ограничено тремя | AI-specific | MVP | Must Have | AC-02 |
 | FR-49 | Каждый агент инструментируется отдельным OTel span — в Langfuse видна latency каждого агента независимо | Observability | MVP | Should Have | AC-05 |
 
@@ -272,10 +289,13 @@ Document Preparation Pipeline — обязательный слой подгот
 | NFR-02a | Local Lite Dev на Mac 8 GB | Не является целевой средой полного LLM stack; допускаются mock/stub сценарии и lightweight-тесты | Железо | Apple M3 8GB RAM не поддерживает vLLM; Ollama с 7B-Q4 пригоден только для разработки без LLM-нагрузки |
 | NFR-03 | Локальность | 0 обращений к внешним API | ИБ | Требования ФЗ-152 (персональные данные не покидают периметр); политика ИБ заказчика; принцип Zero external APIs |
 | NFR-04 | Поддержка языков | Русский и английский | Бизнес | Корпус документов преимущественно на русском; технические термины и код — на английском |
-| NFR-05 | Запуск системы | Одной командой `docker compose up` за < 3 минут | Академический | Критерий воспроизводимости диплома (AC-01); проверяется запуском на чистой машине комиссией |
+| NFR-05 | Запуск системы | `local-lite` запускается одной командой за < 3 минут; `gpu-demo` запускается через Docker Compose, время cold start vLLM фиксируется отдельно | Академический | Разделяет быстрый smoke-run и реальный GPU runtime с загрузкой модели |
 | NFR-06 | Модели | Только open source с поддержкой русского языка | ИБ + Академический | Запрет на проприетарные облачные модели (OpenAI, Anthropic); требование импортозамещения |
 | NFR-07 | Хранение данных | Только self-hosted БД (Qdrant, Neo4j, PostgreSQL) | ИБ | Данные не должны покидать корпоративный контур; cloud-managed БД недопустимы |
 | NFR-08 | Воспроизводимость | Docker образы с пинированными версиями (не `latest`) | Академический + Отраслевой стандарт | Воспроизводимость результатов диплома; защита от breaking changes при повторном запуске |
+| NFR-09 | Toxicity Score | < 0.01 (доля ответов с токсичным/запрещённым контентом) | ИБ + Бизнес | Корпоративный ассистент не должен генерировать грубость или запрещённый контент даже при провокационных запросах; проверяется на `injection`-подмножестве golden dataset через `output_guard`; в MVP реализован через PII/injection regex-гвардрейлы |
+| NFR-10 | Data Freshness | MVP (ручной ingestion): время полного выполнения `POST /ingest` на корпусе ≤ 100 документов < 5 минут; Scale (автоматический pipeline): < 15 минут от появления документа до доступности в поиске | Бизнес + Отраслевой стандарт | В MVP ingestion запускается оператором вручную — автоматической синхронизации нет; ограничение осознанное и зафиксировано в Out of Scope; метрика для автоматического pipeline переходит в Scale-этап |
+| NFR-11 | Concurrency (параллельные сессии) | MVP: ≥ 5 параллельных запросов без OOM и без деградации P95 latency выше NFR-01; Scale: 100 сессий | Железо + Бизнес | Одна RTX 4090 с vLLM поддерживает continuous batching; при 5 параллельных генерациях по 200 токенов VRAM остаётся в пределах NFR VRAM; измеряется в Сценарии 3 нагрузочного теста (`capacity_planning.md`) |
 
 ---
 
@@ -285,7 +305,7 @@ Document Preparation Pipeline — обязательный слой подгот
 
 | AC | Критерий приёмки | Связанные FR |
 |---|---|---|
-| AC-01 | `docker compose up` без ошибок | FR-10, FR-10a, FR-14a, FR-14b, FR-14c, FR-16, FR-43 |
+| AC-01 | `docker compose up` запускает профиль `local-lite` без ошибок; `gpu-demo` запускается на RTX 4090 через профиль Docker Compose | Запуск на целевой среде профиля |
 | AC-02 | Вопрос на русском → ответ с источниками | FR-01, FR-02a, FR-02b, FR-02c, FR-03, FR-45, FR-47a, FR-47b, FR-48a, FR-48b |
 | AC-03 | Junior не получает документы с access_level > 1 | FR-04, FR-09, FR-20, FR-21, FR-22a, FR-22b, FR-23, FR-25a, FR-25b, FR-25c, FR-26, FR-27, FR-33, FR-46a, FR-46b |
 | AC-04 | Knowledge Graph: >50 узлов, >100 рёбер | FR-07, FR-08, FR-11, FR-17a, FR-17b, FR-18a, FR-18b, FR-19b |
@@ -346,7 +366,7 @@ Document Preparation Pipeline — обязательный слой подгот
 | Embeddings | nomic-embed-text через embedding adapter; Ollama допустим как local-lite fallback | Лёгкая модель, хорошее качество для русского; реализация должна быть заменяемой |
 | Vector DB | Qdrant v1.9 | Self-hosted, payload filters для RBAC, активное развитие |
 | Graph DB | Neo4j 5.18 Community | Cypher, визуализация в браузере, Python driver |
-| Orchestration | LangGraph 0.2+ | Multi-Agent: OrchestratorAgent, Retrievers, GeneratorAgent, CriticAgent; `Send()` API для параллельного запуска |
+| Orchestration | LangGraph 0.2+ | Multi-Agent StateGraph: `prepare_query`, `vector_retriever`, `graph_retriever`, `generator`, `critic`; параллельный fan-out через `Send()` API (`dispatch_retrievers`), retry через `should_retry` |
 | Document Preparation | pymupdf + easyocr + Qwen2.5-VL | Слой 1: текст/OCR; Слой 2: vision для чертежей |
 | API | FastAPI + uvicorn | Async, OpenAPI автогенерация, streaming |
 | Frontend | React + TypeScript + Tailwind | Компонентный подход, react-force-graph для Explorer |
@@ -391,7 +411,7 @@ Document Preparation Pipeline — обязательный слой подгот
 
 ## 13. Out of Scope (MVP)
 
-Следующие функции намеренно исключены из MVP и запланированы для этапа Scale:
+Следующие функции намеренно исключены из MVP и запланированы для рассмотрения на этапе Scale:
 
 - **JWT-аутентификация и Identity Provider** — интеграция с LDAP/Active Directory; в MVP роль передаётся через HTTP заголовок
 - **Kubernetes развёртывание** — Helm charts, автомасштабирование
@@ -414,7 +434,7 @@ Document Preparation Pipeline — обязательный слой подгот
 - `CONCEPT.md` — концепция проекта, value proposition, архитектурные принципы, поэтапная стратегия
 - `ADD.md` — Architecture Design Document, технические детали реализации
 - `ADR/` — Architecture Decision Records, обоснование технических решений
-- `docs/diagrams/` — C4 (4 уровня), Deployment, Sequence, Data Flow, ER диаграммы
+- `docs/diagrams/` — C4 (4 уровня), Deployment, Sequence, Data Flow, ER диаграммы; C4 Level 4 описан в `docs/diagrams/c4_level4_code.md`
 - `docs/api/openapi.yaml` — API контракт
 - `docs/data_architecture.md` — схемы хранилищ и data lineage
 - `docs/security_architecture.md` — модель угроз, RBAC, guardrails

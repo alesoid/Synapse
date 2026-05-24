@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synapse — Knowledge Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .fade-in { animation: fadeIn 0.25s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .spinner { animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .source-card { transition: transform 0.15s, box-shadow 0.15s; }
+    .source-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+    textarea:focus, select:focus { outline: none; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans antialiased">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────────── -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+    <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+          </svg>
+        </div>
+        <div class="leading-tight">
+          <p class="font-bold text-slate-900 text-sm">Synapse</p>
+          <p class="text-xs text-slate-400">Knowledge Platform · GraphRAG MVP</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-500 font-medium">Роль:</span>
+          <select id="roleSelect" onchange="onRoleChange()"
+            class="text-sm bg-white border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-sm">
+            <option value="junior">👤 Junior (L1)</option>
+            <option value="middle">👤 Middle (L2)</option>
+            <option value="senior" selected>👤 Senior (L3)</option>
+            <option value="manager">👤 Manager (L4)</option>
+            <option value="admin">🔑 Admin (L5)</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <div id="statusDot" class="w-2 h-2 rounded-full bg-slate-300 transition-colors" title="Проверка..."></div>
+          <span id="statusLabel" class="text-xs text-slate-400">backend</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main ──────────────────────────────────────────────────────────────── -->
+  <main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
+
+    <!-- Query card -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <label class="block text-sm font-semibold text-slate-700 mb-3">
+        Задайте вопрос по корпоративным документам
+      </label>
+      <div class="flex gap-3 items-start">
+        <textarea id="queryInput" rows="3" placeholder="Например: Какова политика доступа к GitLab? Как проходит онбординг?"
+          class="flex-1 border border-slate-300 rounded-xl px-4 py-3 text-sm placeholder-slate-400 resize-none
+                 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
+          onkeydown="if(event.ctrlKey && event.key==='Enter') sendQuery()">
+        </textarea>
+        <button id="sendBtn" onclick="sendQuery()"
+          class="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-medium px-5 py-3 rounded-xl
+                 flex items-center gap-2 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
+          <svg id="sendIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+          </svg>
+          <svg id="spinIcon" class="w-4 h-4 spinner hidden" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/>
+          </svg>
+          Отправить
+        </button>
+      </div>
+      <p class="text-xs text-slate-400 mt-2">Ctrl + Enter для отправки</p>
+    </div>
+
+    <!-- Error banner -->
+    <div id="errorPanel" class="hidden fade-in bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-start gap-3">
+      <svg class="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div>
+        <p class="text-sm font-semibold text-red-800">Ошибка</p>
+        <p id="errorText" class="text-xs text-red-600 mt-0.5"></p>
+      </div>
+      <button onclick="document.getElementById('errorPanel').classList.add('hidden')"
+        class="ml-auto text-red-300 hover:text-red-500 flex-shrink-0">✕</button>
+    </div>
+
+    <!-- Results -->
+    <div id="resultsPanel" class="hidden space-y-4">
+
+      <!-- Scores row -->
+      <div class="flex flex-wrap gap-3 fade-in">
+        <!-- Quality -->
+        <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm text-sm">
+          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span class="text-slate-500">Качество ответа:</span>
+          <span id="qualityStars" class="font-mono tracking-tight font-semibold"></span>
+          <span id="qualityVal" class="text-slate-400 text-xs"></span>
+        </div>
+
+        <!-- Confidence -->
+        <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm text-sm">
+          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span class="text-slate-500">Актуальность:</span>
+          <span id="confidenceVal" class="font-semibold"></span>
+        </div>
+
+        <!-- Trace (dev helper) -->
+        <div id="traceRow" class="hidden ml-auto flex items-center gap-1.5">
+          <span class="text-xs text-slate-400">trace:</span>
+          <code id="traceVal" class="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg"></code>
+        </div>
+      </div>
+
+      <!-- Stale sources warning (confidence < 0.5) -->
+      <div id="staleBanner" class="hidden fade-in bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 flex items-start gap-3">
+        <svg class="w-5 h-5 text-orange-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <div>
+          <p class="text-sm font-semibold text-orange-800">Источники могут быть устаревшими</p>
+          <p class="text-xs text-orange-600 mt-0.5">Актуальность источников ниже 50%. Рекомендуется проверить информацию в первоисточниках.</p>
+        </div>
+      </div>
+
+      <!-- Knowledge gap banner -->
+      <div id="gapBanner" class="hidden fade-in bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
+        <svg class="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.96-.833-2.732 0L3.07 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+        </svg>
+        <div>
+          <p class="text-sm font-semibold text-amber-800">Информация отсутствует в корпусе</p>
+          <p class="text-xs text-amber-600 mt-0.5">Информация по данному вопросу отсутствует в корпусе. Запрос зафиксирован для пополнения базы знаний.</p>
+        </div>
+      </div>
+
+      <!-- Answer -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 fade-in">
+        <p class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Ответ</p>
+        <div id="answerText" class="text-slate-800 leading-relaxed whitespace-pre-wrap text-sm"></div>
+      </div>
+
+      <!-- Sources -->
+      <div class="fade-in">
+        <div class="flex items-center gap-2 mb-3">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-widest">Источники</p>
+          <span id="sourcesCount" class="bg-indigo-100 text-indigo-700 text-xs font-semibold px-2 py-0.5 rounded-full">0</span>
+        </div>
+        <p id="noSourcesHint" class="text-sm text-slate-400 italic hidden">
+          Документы не найдены. Попробуйте переформулировать запрос или проверьте, что corpus был проиндексирован (/ingest).
+        </p>
+        <div id="sourcesList" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+      </div>
+    </div>
+
+    <!-- ── Admin: Graph panel ────────────────────────────────────────────────── -->
+    <div id="graphPanel" class="hidden">
+      <hr class="border-slate-200 my-2">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <p class="font-semibold text-slate-700">Граф знаний</p>
+          <p class="text-xs text-slate-400">Узлы и рёбра, доступные роли Admin (access_level = 5)</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="loadGraph()"
+            class="text-sm bg-white hover:bg-slate-50 border border-slate-300 text-slate-600 px-4 py-2 rounded-xl shadow-sm transition-colors">
+            🔄 Загрузить
+          </button>
+          <a href="http://localhost:7474" target="_blank"
+            class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl shadow-sm transition-colors inline-flex items-center gap-1.5">
+            Neo4j Browser
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+            Узлы <span id="nodesCount" class="normal-case text-indigo-600"></span>
+          </p>
+          <div id="nodesTable" class="max-h-72 overflow-y-auto">
+            <p class="text-xs text-slate-400 italic">Нажмите «Загрузить» для получения данных из Neo4j.</p>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+            Рёбра <span id="edgesCount" class="normal-case text-indigo-600"></span>
+          </p>
+          <div id="edgesTable" class="max-h-72 overflow-y-auto">
+            <p class="text-xs text-slate-400 italic">Нажмите «Загрузить» для получения данных из Neo4j.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Scripts ────────────────────────────────────────────────────────────── -->
+  <script>
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function escHtml(s) {
+      return String(s ?? '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function getRole() { return document.getElementById('roleSelect').value; }
+
+    function setLoading(on) {
+      const btn = document.getElementById('sendBtn');
+      btn.disabled = on;
+      document.getElementById('sendIcon').classList.toggle('hidden', on);
+      document.getElementById('spinIcon').classList.toggle('hidden', !on);
+    }
+
+    function showError(msg) {
+      document.getElementById('errorText').textContent = msg;
+      document.getElementById('errorPanel').classList.remove('hidden');
+    }
+
+    function stars(score) {
+      const n = Math.round(Math.max(0, Math.min(5, score)));
+      return '★'.repeat(n) + '☆'.repeat(5 - n);
+    }
+
+    function scoreColor(v, thresholds) {
+      // thresholds: [high, mid] → [green, amber, red]
+      if (v >= thresholds[0]) return 'text-green-600';
+      if (v >= thresholds[1]) return 'text-amber-500';
+      return 'text-red-500';
+    }
+
+    function accessLabel(lvl) {
+      return ({1:'Junior',2:'Middle',3:'Senior',4:'Manager',5:'Admin'})[lvl] ?? `L${lvl}`;
+    }
+
+    // ── Role change ────────────────────────────────────────────────────────────
+    function onRoleChange() {
+      const isAdmin = getRole() === 'admin';
+      document.getElementById('graphPanel').classList.toggle('hidden', !isAdmin);
+    }
+
+    // ── Send query ─────────────────────────────────────────────────────────────
+    async function sendQuery() {
+      const q = document.getElementById('queryInput').value.trim();
+      if (q.length < 3) { showError('Введите запрос длиной не менее 3 символов.'); return; }
+
+      setLoading(true);
+      document.getElementById('resultsPanel').classList.add('hidden');
+      document.getElementById('errorPanel').classList.add('hidden');
+
+      try {
+        const resp = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Role': getRole() },
+          body: JSON.stringify({ query: q, stream: false }),
+        });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({ detail: resp.statusText }));
+          showError(`HTTP ${resp.status}: ${e.detail ?? resp.statusText}`);
+          return;
+        }
+        renderResults(await resp.json());
+      } catch (e) {
+        showError(`Ошибка сети: ${e.message}`);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // ── Render results ─────────────────────────────────────────────────────────
+    function renderResults(d) {
+      // Quality
+      const qs = document.getElementById('qualityStars');
+      qs.textContent = stars(d.quality_score);
+      qs.className = `font-mono tracking-tight font-semibold ${scoreColor(d.quality_score, [3.5, 2])}`;
+      document.getElementById('qualityVal').textContent = `(${(d.quality_score ?? 0).toFixed(1)} / 5)`;
+
+      // Confidence
+      const conf = document.getElementById('confidenceVal');
+      conf.textContent = `${Math.round((d.confidence_score ?? 0) * 100)}%`;
+      conf.className = `font-semibold ${scoreColor(d.confidence_score ?? 0, [0.7, 0.4])}`;
+
+      // Trace
+      if (d.trace_id) {
+        document.getElementById('traceVal').textContent = d.trace_id;
+        document.getElementById('traceRow').classList.remove('hidden');
+      }
+
+      // Stale sources warning
+      const confidence = d.confidence_score ?? 0;
+      document.getElementById('staleBanner').classList.toggle('hidden', confidence >= 0.5 || confidence === 0);
+
+      // Gap
+      document.getElementById('gapBanner').classList.toggle('hidden', !d.gap_detected);
+
+      // Answer
+      document.getElementById('answerText').textContent = d.answer ?? '';
+
+      // Sources
+      const sources = d.sources ?? [];
+      const count = sources.length;
+      document.getElementById('sourcesCount').textContent = count;
+      document.getElementById('noSourcesHint').classList.toggle('hidden', count > 0);
+
+      document.getElementById('sourcesList').innerHTML = sources.map(s => `
+        <div class="source-card bg-white border border-slate-200 rounded-xl p-4 cursor-default">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <span class="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg">
+              ${escHtml(s.doc_id)}
+            </span>
+            <span class="text-xs text-slate-400">score ${(s.retrieval_score ?? 0).toFixed(3)}</span>
+          </div>
+          <p class="text-sm font-medium text-slate-700 truncate mb-2" title="${escHtml(s.section)}">
+            ${escHtml(s.section)}
+          </p>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">${accessLabel(s.access_level)}</span>
+            ${s.last_updated ? `<span>📅 ${escHtml(s.last_updated)}</span>` : ''}
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('resultsPanel').classList.remove('hidden');
+    }
+
+    // ── Load graph (admin only) ────────────────────────────────────────────────
+    async function loadGraph() {
+      try {
+        const resp = await fetch('/graph', { headers: { 'X-User-Role': 'admin' } });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({ detail: resp.statusText }));
+          showError(`Граф: HTTP ${resp.status}: ${e.detail}`);
+          return;
+        }
+        renderGraph(await resp.json());
+      } catch (e) {
+        showError(`Ошибка загрузки графа: ${e.message}`);
+      }
+    }
+
+    function renderGraph(d) {
+      const nodes = d.nodes ?? [];
+      const edges = d.edges ?? [];
+
+      document.getElementById('nodesCount').textContent = `(${nodes.length})`;
+      document.getElementById('edgesCount').textContent = `(${edges.length})`;
+
+      const nodesTbl = document.getElementById('nodesTable');
+      nodesTbl.innerHTML = nodes.length === 0
+        ? '<p class="text-xs text-slate-400 italic">Нет данных. Запустите POST /ingest для индексации корпуса.</p>'
+        : `<table class="w-full text-xs">
+            <thead><tr class="text-slate-400 border-b border-slate-100">
+              <th class="text-left py-1 pr-3 font-medium">ID</th>
+              <th class="text-left py-1 pr-3 font-medium">Тип</th>
+              <th class="text-left py-1 font-medium">L</th>
+            </tr></thead>
+            <tbody>${nodes.slice(0, 100).map(n => `
+              <tr class="border-b border-slate-50 hover:bg-slate-50">
+                <td class="py-1 pr-3 font-mono text-slate-600 truncate max-w-[130px]" title="${escHtml(n.id??'')}">${escHtml((n.id??'').slice(0,22))}</td>
+                <td class="py-1 pr-3 text-indigo-600 font-medium">${escHtml(n.type??'—')}</td>
+                <td class="py-1 text-slate-500">${n.access_level??'—'}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+          ${nodes.length > 100 ? `<p class="text-xs text-slate-400 mt-2">Показано 100 из ${nodes.length}</p>` : ''}`;
+
+      const edgesTbl = document.getElementById('edgesTable');
+      edgesTbl.innerHTML = edges.length === 0
+        ? '<p class="text-xs text-slate-400 italic">Нет данных.</p>'
+        : `<table class="w-full text-xs">
+            <thead><tr class="text-slate-400 border-b border-slate-100">
+              <th class="text-left py-1 pr-3 font-medium">От</th>
+              <th class="text-left py-1 pr-3 font-medium">Тип</th>
+              <th class="text-left py-1 font-medium">К</th>
+            </tr></thead>
+            <tbody>${edges.slice(0, 100).map(e => `
+              <tr class="border-b border-slate-50 hover:bg-slate-50">
+                <td class="py-1 pr-3 font-mono text-slate-500 truncate max-w-[100px]">${escHtml((e.source??'').slice(0,14))}</td>
+                <td class="py-1 pr-3 text-amber-600 font-semibold">${escHtml(e.type??'—')}</td>
+                <td class="py-1 font-mono text-slate-500 truncate max-w-[100px]">${escHtml((e.target??'').slice(0,14))}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+          ${edges.length > 100 ? `<p class="text-xs text-slate-400 mt-2">Показано 100 из ${edges.length}</p>` : ''}`;
+    }
+
+    // ── Health check on load ───────────────────────────────────────────────────
+    (async () => {
+      try {
+        const r = await fetch('/health');
+        const ok = r.ok;
+        document.getElementById('statusDot').className =
+          `w-2 h-2 rounded-full transition-colors ${ok ? 'bg-green-400' : 'bg-red-400'}`;
+        document.getElementById('statusLabel').textContent = ok ? 'online' : 'offline';
+      } catch {
+        document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-red-400';
+        document.getElementById('statusLabel').textContent = 'offline';
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,87 +1,122 @@
-# Synapse 🧠
+# Synapse
 
 > Корпоративная платформа интеллектуального анализа знаний на основе GraphRAG
 
-Synapse — это on-premise система для поиска по корпоративным документам, работающая полностью в закрытом контуре без обращения к внешним API. В отличие от обычного RAG, Synapse строит граф знаний из документов и комбинирует векторный поиск с графовым траверсалом, что даёт более точные и контекстно-обогащённые ответы.
+Synapse — on-premise система для поиска по корпоративным документам, работающая полностью в закрытом контуре без внешних API. Гибридный GraphRAG: 0.7 × векторный поиск (Qdrant) + 0.3 × графовый траверсал (Neo4j) с RBAC на уровне чанков.
 
 ---
 
-## Ключевые возможности
+## Статус MVP (защита 3 июня 2026)
 
-- **GraphRAG** — гибридный поиск: векторный (Qdrant) + графовый (Neo4j Knowledge Graph)
-- **RBAC** — разграничение доступа на уровне чанков по ролям (Junior / Middle / Senior / Manager / Admin)
-- **Q&A режим** — вопрос на русском языке → ответ со ссылками на источники
-- **Explorer режим** — визуализация графа знаний для Admin/Analyst
-- **Guardrails** — фильтрация PII и защита от prompt injection
-- **Полная локальность** — vLLM + Qwen2.5, без OpenAI/Anthropic
+| Фаза | Статус | Описание |
+|------|--------|----------|
+| Корпус документов | ✅ | 15 документов, 5 уровней доступа (access_level 1–5) |
+| Ingestion pipeline | ✅ | Markdown → chunks → Qdrant + Neo4j (mock/real) |
+| Query pipeline | ✅ | Vector + Graph retrieval → merge 0.7/0.3 → LLM |
+| LangGraph агент | ✅ | 9 нод, retry до 3 итераций, knowledge gap detection |
+| RBAC | ✅ | 5 ролей, 3 слоя: API guard + Qdrant filter + Neo4j WHERE |
+| Guardrails | ✅ | Injection blocking (HTTP 422), input validation |
+| UI | ✅ | SPA на Tailwind + Vanilla JS, role selector, sources, graph view |
+| Observability | ✅ | Langfuse + Prometheus + Grafana (docker-compose profile) |
+| Golden dataset | ✅ | 32 вопроса: positive/negative/rbac/injection |
+| Eval scripts | ✅ | eval_golden.py, eval_rbac.py, eval_comparison.py, load_test.py |
+
+### Результаты тестирования (local-lite / mock mode)
+
+| Тест | Результат |
+|------|-----------|
+| Unit tests | 30/30 PASS |
+| RBAC leakage | 0% (0/10 restricted probes leaked) |
+| Knowledge gap detection | 6/6 PASS |
+| Injection blocking | 3/3 PASS (HTTP 422) |
+| Load test P95 (5 workers, mock) | 32 ms |
+| Load test RPS (5 workers, mock) | 207 RPS |
 
 ---
 
 ## Стек
 
 | Компонент | Технология |
-|---|---|
-| LLM (prod) | vLLM + Qwen2.5-14B-AWQ |
-| LLM (dev) | Ollama + Qwen2.5-7B-Q4 |
-| Embeddings | nomic-embed-text |
+|-----------|-----------|
+| LLM (gpu-demo) | vLLM + Qwen2.5-14B-AWQ |
+| LLM (local-lite) | mock (deterministic) |
+| Embeddings | nomic-embed-text (mock в local-lite) |
 | Vector DB | Qdrant v1.9 |
 | Graph DB | Neo4j 5.18 Community |
-| Orchestration | LangGraph |
-| API | FastAPI |
-| Frontend | React + TypeScript + Tailwind |
+| Orchestration | LangGraph 0.6 |
+| API | FastAPI + Pydantic v2 |
+| Frontend | Tailwind CDN + Vanilla JS SPA |
 | Observability | Langfuse + Prometheus + Grafana |
-| Infra | Docker Compose |
-| Cloud | Yandex Cloud gpu-standard-v3 (T4) |
+| Infra | Docker Compose (profiles) |
 
 ---
 
 ## Быстрый старт
 
-### Требования
-- Docker + Docker Compose v2
-- 16GB RAM (минимум)
-- Ollama (для dev режима): `brew install ollama`
-
-### Запуск (dev режим, Apple M3 / CPU)
+### local-lite (Mac, без GPU, без Docker)
 
 ```bash
-# 1. Клонировать репозиторий
-git clone https://github.com/<your-username>/synapse.git
-cd synapse
+# 1. Установить зависимости
+pip install -e ".[dev]"
 
-# 2. Скопировать конфигурацию
-cp .env.example .env
+# 2. Запустить сервер
+uvicorn backend.api.main:app --host 0.0.0.0 --port 8000
 
-# 3. Запустить стек
-docker compose up -d
+# 3. Открыть UI
+open http://localhost:8000/ui/
 
-# 4. Проверить что все сервисы healthy
-docker compose ps
-```
-
-### Запуск (prod режим, GPU сервер)
-
-```bash
-# Запустить с vLLM профилем
-docker compose --profile gpu up -d
-```
-
-### Загрузка документов
-
-```bash
-curl -X POST http://localhost:8000/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"file_path": "docs/corpus/sample/gitlab_handbook.pdf", "access_level": 1}'
-```
-
-### Первый запрос
-
-```bash
+# 4. Запросить документ
 curl -X POST http://localhost:8000/query \
   -H "X-User-Role: junior" \
   -H "Content-Type: application/json" \
-  -d '{"question": "Какой процесс согласования доступа к продакшн-серверам?"}'
+  -d '{"query": "Кто отвечает за выдачу IT-доступов при онбординге?"}'
 ```
+
+### local-lite (Docker)
+
+```bash
+cd infra
+cp .env.example .env
+docker compose --profile local-lite up -d
+open http://localhost:8000/ui/
+```
+
+### gpu-demo (RTX 4090 + полный стек)
+
+```bash
+cd infra
+cp .env.example .env
+# Заполнить HF_TOKEN для загрузки Qwen2.5-14B-AWQ
+docker compose --profile gpu --profile observability up -d
+
+# Индексация корпуса
+curl -X POST http://localhost:8000/ingest \
+  -H "X-User-Role: admin" \
+  -H "Content-Type: application/json"
+```
+
+---
+
+## Оценка качества
+
+```bash
+# Unit tests
+python -m pytest tests/ -v
+
+# Golden dataset (32 вопроса)
+python scripts/eval_golden.py --url http://localhost:8000
+
+# RBAC leakage (0% цель)
+python scripts/eval_rbac.py --url http://localhost:8000
+
+# GraphRAG vs vector-only (требует GPU стек с индексированным корпусом)
+python scripts/eval_comparison.py --url http://localhost:8000
+
+# Load test (P50/P95/P99)
+python scripts/load_test.py --url http://localhost:8000 --concurrency 5 --duration 30
+```
+
+Отчёты сохраняются в `docs/evaluation/results/`.
 
 ---
 
@@ -89,113 +124,88 @@ curl -X POST http://localhost:8000/query \
 
 ```
 synapse/
-├── docker-compose.yml          # Полный стек одной командой
-├── .env.example                # Шаблон переменных окружения
 ├── backend/
-│   ├── agents/                 # LangGraph агенты
-│   ├── api/                    # FastAPI эндпоинты
-│   ├── db/                     # Клиенты Qdrant и Neo4j
-│   ├── embeddings/             # Ollama embeddings
-│   ├── ingestion/              # Pipeline загрузки документов
-│   ├── retrieval/              # Гибридный поиск
-│   └── security/               # RBAC + Guardrails
-├── frontend/                   # React + TypeScript UI
+│   ├── agents/          # LangGraph агент (graph_agent.py)
+│   ├── api/             # FastAPI роуты, RBAC guard, injection filter
+│   ├── core/            # Settings (pydantic-settings + lru_cache)
+│   ├── embeddings/      # Embedding adapter (mock / nomic-embed-text)
+│   ├── ingestion/       # Markdown corpus → chunks → storage
+│   ├── llm/             # LLM client (mock / vLLM)
+│   ├── observability/   # Langfuse tracing
+│   ├── query/           # Pipeline, CriticAgent, entity extractor
+│   ├── retrieval/       # VectorRetriever + GraphRetriever
+│   └── security/        # RBAC roles и access_level маппинг
+├── frontend/            # SPA: index.html (Tailwind CDN + Vanilla JS)
 ├── infra/
-│   ├── nginx/                  # Load balancer конфиг
-│   ├── prometheus/             # Метрики конфиг
-│   ├── grafana/                # Дашборды
-│   └── locustfile.py           # Нагрузочные тесты
+│   ├── docker-compose.yml    # Profiles: local-lite | gpu | observability | proxy
+│   ├── .env.example
+│   ├── prometheus.yml
+│   └── grafana/
+├── scripts/
+│   ├── eval_golden.py        # Golden dataset runner (32 вопроса)
+│   ├── eval_rbac.py          # RBAC leakage tester (цель 0%)
+│   ├── eval_comparison.py    # GraphRAG vs vector-only
+│   └── load_test.py          # Async load test (P50/P95/P99)
+├── tests/               # 30 unit + integration тестов
 └── docs/
-    ├── CONCEPT.md              # Концепция проекта
-    ├── ТЗ.md                   # Техническое задание
-    ├── ADD.md                  # Architecture Design Document
-    ├── ADR/                    # Architecture Decision Records
-    ├── diagrams/               # C4, Sequence, ER, Deployment, Data Flow
-    ├── corpus/                 # Тестовый корпус документов
-    ├── capacity_planning.md    # Расчёт ресурсов
-    └── load_test_report.md     # Результаты нагрузочного теста
+    ├── CONCEPT.md
+    ├── TECHNICAL_SPEC.md
+    ├── corpus/          # 15 корпоративных документов (access_level 1–5)
+    └── evaluation/
+        ├── golden_dataset.jsonl    # 32 вопроса (positive/negative/rbac/injection)
+        ├── poc_comparison.md       # GraphRAG vs vector-only методология
+        ├── load_test_report.md     # Результаты нагрузочного теста
+        └── results/                # Timestamped eval reports
 ```
-
----
-
-## Документация
-
-| Документ | Описание |
-|---|---|
-| [CONCEPT.md](docs/CONCEPT.md) | Концепция, проблема, value proposition, стратегия PoC→MVP→Scale |
-| [ТЗ.md](docs/ТЗ.md) | Техническое задание, функциональные и нефункциональные требования |
-| [ADD.md](docs/ADD.md) | Architecture Design Document — полное техническое описание |
-| [ADR/](docs/ADR/) | Architecture Decision Records — обоснование технических решений |
-| [diagrams/](docs/diagrams/) | C4 (4 уровня), Deployment, Sequence, Data Flow, ER диаграммы |
-| [capacity_planning.md](docs/capacity_planning.md) | Расчёт ресурсов инфраструктуры |
-| [load_test_report.md](docs/load_test_report.md) | Результаты нагрузочного тестирования |
 
 ---
 
 ## Роли и доступ
 
-| Роль | Уровень | Доступные документы |
-|---|---|---|
-| Junior | 1 | Публичные регламенты, онбординг |
-| Middle | 2 | + Технические стандарты |
-| Senior | 3 | + Архитектурные решения, ADR |
-| Manager | 4 | + HR-политики, согласования |
-| Admin | 5 | Все документы + Explorer режим |
+| Роль | Уровень | Header | Документы |
+|------|---------|--------|-----------|
+| Junior | 1 | `X-User-Role: junior` | INS-HR-001, INS-HR-002, POL-HR-001 |
+| Middle | 2 | `X-User-Role: middle` | + STD-ENG-001, STD-ENG-002, STD-ENG-003 |
+| Senior | 3 | `X-User-Role: senior` | + STD-ARCH-001, STD-ARCH-002, POL-ARCH-001 |
+| Manager | 4 | `X-User-Role: manager` | + POL-SEC-001, POL-SEC-002, POL-MGR-001 |
+| Admin | 5 | `X-User-Role: admin` | Все + POL-SEC-003, POL-SEC-004, POL-SEC-005 |
 
----
-
-## Демо-сценарии
-
-**Сценарий 1 — Q&A с RBAC:**
-Junior спрашивает про процесс согласования доступа → получает ответ с источниками → трейс виден в Langfuse
-
-**Сценарий 2 — RBAC блокировка:**
-Junior пытается получить HR-документ уровня Manager → система возвращает сообщение об ограничении доступа
-
-**Сценарий 3 — Graph Explorer:**
-Admin открывает Explorer → видит граф связей между документами, ролями и процессами в Neo4j Browser
-
-Сценарий 4 — Guardrails:
-Пользователь отправляет запрос с PII (например email) или prompt injection → система блокирует/фильтрует → в ответе видно что сработал guardrail → трейс в Langfuse показывает ноду input_guard
-
-Сценарий 5 — Self-Reflection:
-Намеренно сложный вопрос → агент делает 2-3 итерации → в Langfuse видно retry цикл → финальный ответ лучше первого
-
-Сценарий 6 — Ingestion + логи vLLM:
-Загрузка нового документа → извлечение сущностей → граф обновился в Neo4j Workspace → логи vLLM показывают tokens/sec
 ---
 
 ## Сервисы и порты
 
-| Сервис | URL | Описание |
-|---|---|---|
-| Frontend | http://localhost:3000 | React UI |
-| API | http://localhost:8000 | FastAPI + Swagger `/docs` |
-| Neo4j Browser | http://localhost:7474 | Визуализация графа |
-| Langfuse | http://localhost:3001 | Трейсы запросов |
-| Grafana | http://localhost:3002 | Метрики |
-| Prometheus | http://localhost:9090 | Сбор метрик |
-| Qdrant | http://localhost:6333 | Vector DB UI |
+| Сервис | URL | Профиль |
+|--------|-----|---------|
+| UI | http://localhost:8000/ui/ | local-lite / gpu |
+| API + Swagger | http://localhost:8000/docs | all |
+| Neo4j Browser | http://localhost:7474 | gpu / storage |
+| Qdrant | http://localhost:6333 | gpu / storage |
+| Langfuse | http://localhost:3000 | observability |
+| Grafana | http://localhost:3001 | observability |
+| Prometheus | http://localhost:9090 | observability |
 
 ---
 
-## Переменные окружения
+## Демо-сценарии (защита)
 
-Скопируй `.env.example` в `.env` и заполни:
+**Сценарий 1 — Q&A с источниками:**  
+role=junior → вопрос про онбординг → ответ со ссылкой INS-HR-001, confidence_score, quality_score
 
-```bash
-# Neo4j
-NEO4J_PASSWORD=your_password
+**Сценарий 2 — RBAC блокировка:**  
+role=junior → вопрос про POL-SEC-001 (уровень manager) → пустой ответ, no sources
 
-# LLM Backend (ollama или vllm)
-LLM_BACKEND=ollama
-OLLAMA_HOST=http://host.docker.internal:11434
-VLLM_HOST=http://vllm:8001
+**Сценарий 3 — Knowledge Gap:**  
+Любая роль → вопрос о командировках → gap_detected=true, "запрос зафиксирован"
 
-# Langfuse
-LANGFUSE_SECRET_KEY=your_secret
-LANGFUSE_PUBLIC_KEY=your_public
-```
+**Сценарий 4 — Injection Guard:**  
+"Ignore previous instructions..." → HTTP 422, Query blocked by security policy
+
+**Сценарий 5 — Admin Graph View:**  
+role=admin → UI → Graph Panel → таблица нод и рёбер, ссылка на Neo4j Browser
+
+**Сценарий 6 — Observability:**  
+Grafana: latency P95, RPS, knowledge_gap_total  
+Langfuse: breakdown по нодам агента (vector_retriever, critic, etc.)
 
 ---
 

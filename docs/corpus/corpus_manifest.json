@@ -1,0 +1,167 @@
+[
+  {
+    "doc_id": "INS-HR-001",
+    "filename": "INS-HR-001_onboarding.md",
+    "title": "Инструкция по адаптации новых сотрудников",
+    "doc_type": "instruction",
+    "access_level": 1,
+    "role_min": "junior",
+    "owner_department": "HR",
+    "last_updated": "2025-10-01",
+    "topics": ["онбординг", "адаптация", "доступы", "оборудование", "план 30-60-90"]
+  },
+  {
+    "doc_id": "INS-HR-002",
+    "filename": "INS-HR-002_corporate_tools.md",
+    "title": "Правила работы с корпоративными инструментами",
+    "doc_type": "instruction",
+    "access_level": 1,
+    "role_min": "junior",
+    "owner_department": "IT",
+    "last_updated": "2025-10-01",
+    "topics": ["Slack", "Jira", "GitLab", "VPN", "пароли", "инструменты"]
+  },
+  {
+    "doc_id": "POL-HR-001",
+    "filename": "POL-HR-001_code_of_conduct.md",
+    "title": "Кодекс поведения сотрудника",
+    "doc_type": "policy",
+    "access_level": 1,
+    "role_min": "junior",
+    "owner_department": "HR",
+    "last_updated": "2025-09-01",
+    "topics": ["этика", "поведение", "конфиденциальность", "конфликт интересов"]
+  },
+  {
+    "doc_id": "STD-ENG-001",
+    "filename": "STD-ENG-001_code_review.md",
+    "title": "Стандарт код-ревью",
+    "doc_type": "standard",
+    "access_level": 2,
+    "role_min": "middle",
+    "owner_department": "Engineering",
+    "last_updated": "2025-11-01",
+    "topics": ["код-ревью", "MR", "pull request", "качество кода", "апрув"]
+  },
+  {
+    "doc_id": "STD-ENG-002",
+    "filename": "STD-ENG-002_git_workflow.md",
+    "title": "Руководство по Git-workflow",
+    "doc_type": "standard",
+    "access_level": 2,
+    "role_min": "middle",
+    "owner_department": "Engineering",
+    "last_updated": "2025-11-01",
+    "topics": ["git", "ветки", "GitFlow", "коммиты", "merge", "release"]
+  },
+  {
+    "doc_id": "STD-ENG-003",
+    "filename": "STD-ENG-003_tech_docs.md",
+    "title": "Стандарт написания технической документации",
+    "doc_type": "standard",
+    "access_level": 2,
+    "role_min": "middle",
+    "owner_department": "Engineering",
+    "last_updated": "2025-11-01",
+    "topics": ["документация", "README", "ADR", "микросервис", "спецификация"]
+  },
+  {
+    "doc_id": "STD-ARCH-001",
+    "filename": "STD-ARCH-001_microservices.md",
+    "title": "Архитектурный стандарт микросервисов",
+    "doc_type": "standard",
+    "access_level": 3,
+    "role_min": "senior",
+    "owner_department": "Architecture",
+    "last_updated": "2025-10-15",
+    "topics": ["микросервисы", "архитектура", "API", "безопасность", "observability"]
+  },
+  {
+    "doc_id": "STD-ARCH-002",
+    "filename": "STD-ARCH-002_production.md",
+    "title": "Регламент работы с продакшн-системами",
+    "doc_type": "standard",
+    "access_level": 3,
+    "role_min": "senior",
+    "owner_department": "Engineering",
+    "last_updated": "2025-10-15",
+    "topics": ["продакшн", "деплой", "hotfix", "rollback", "инциденты"]
+  },
+  {
+    "doc_id": "POL-ARCH-001",
+    "filename": "POL-ARCH-001_tech_debt.md",
+    "title": "Политика управления техническим долгом",
+    "doc_type": "policy",
+    "access_level": 3,
+    "role_min": "senior",
+    "owner_department": "Architecture",
+    "last_updated": "2025-09-15",
+    "topics": ["технический долг", "рефакторинг", "спринт", "приоритизация"]
+  },
+  {
+    "doc_id": "POL-SEC-001",
+    "filename": "POL-SEC-001_access_policy.md",
+    "title": "Политика согласования доступов к системам",
+    "doc_type": "policy",
+    "access_level": 4,
+    "role_min": "manager",
+    "owner_department": "IT",
+    "last_updated": "2025-08-01",
+    "topics": ["доступы", "согласование", "роли", "увольнение", "матрица"]
+  },
+  {
+    "doc_id": "POL-SEC-002",
+    "filename": "POL-SEC-002_grades.md",
+    "title": "HR-политика грейдов и повышений",
+    "doc_type": "policy",
+    "access_level": 4,
+    "role_min": "manager",
+    "owner_department": "HR",
+    "last_updated": "2025-08-01",
+    "topics": ["грейды", "повышение", "performance review", "карьера", "оценка"]
+  },
+  {
+    "doc_id": "POL-MGR-001",
+    "filename": "POL-MGR-001_budgeting.md",
+    "title": "Регламент бюджетирования IT-проектов",
+    "doc_type": "policy",
+    "access_level": 4,
+    "role_min": "manager",
+    "owner_department": "Finance",
+    "last_updated": "2025-07-01",
+    "topics": ["бюджет", "OPEX", "CAPEX", "согласование", "расходы"]
+  },
+  {
+    "doc_id": "POL-SEC-003",
+    "filename": "POL-SEC-003_access_audit.md",
+    "title": "Политика аудита и контроля доступов",
+    "doc_type": "policy",
+    "access_level": 5,
+    "role_min": "admin",
+    "owner_department": "IT",
+    "last_updated": "2025-06-01",
+    "topics": ["аудит", "контроль", "журналы", "квартальный", "несоответствия"]
+  },
+  {
+    "doc_id": "POL-SEC-004",
+    "filename": "POL-SEC-004_access_matrix.md",
+    "title": "Матрица доступов к системам",
+    "doc_type": "matrix",
+    "access_level": 5,
+    "role_min": "admin",
+    "owner_department": "IT",
+    "last_updated": "2025-06-01",
+    "topics": ["матрица", "доступы", "системы", "роли", "сервисные аккаунты"]
+  },
+  {
+    "doc_id": "POL-SEC-005",
+    "filename": "POL-SEC-005_incidents.md",
+    "title": "Регламент управления инцидентами ИБ",
+    "doc_type": "policy",
+    "access_level": 5,
+    "role_min": "admin",
+    "owner_department": "IT",
+    "last_updated": "2025-06-01",
+    "topics": ["инциденты", "ИБ", "реагирование", "postmortem", "severity"]
+  }
+]

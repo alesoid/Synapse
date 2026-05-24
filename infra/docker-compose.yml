@@ -1,0 +1,333 @@
+services:
+
+  # ── Local-lite backend (Mac/dev, no GPU) ──────────────────────────────────
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: synapse-backend
+    restart: unless-stopped
+    profiles:
+      - local-lite
+    ports:
+      - "8000:8000"
+    environment:
+      APP_MODE: local-lite
+      LLM_BACKEND: mock
+      EMBEDDINGS_BACKEND: mock
+      STORAGE_BACKEND: mock
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - synapse-network
+
+  # ── GPU-demo backend (RTX 4090, full pipeline) ────────────────────────────
+  backend-gpu:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: synapse-backend-gpu
+    restart: unless-stopped
+    profiles:
+      - gpu
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      APP_MODE: gpu-demo
+      LLM_BACKEND: vllm
+      EMBEDDINGS_BACKEND: local
+      STORAGE_BACKEND: qdrant-neo4j
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      VLLM_HOST: http://vllm:8001
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_EMBEDDING_MODEL: nomic-embed-text
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      GAP_STORE_PATH: /data/gaps.db
+    depends_on:
+      vllm:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - synapse-network
+
+  # ── vLLM (Qwen2.5-14B-AWQ, RTX 4090) ─────────────────────────────────────
+  vllm:
+    image: vllm/vllm-openai:v0.6.3
+    container_name: synapse-vllm
+    restart: unless-stopped
+    profiles:
+      - gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "8001:8001"
+    volumes:
+      - vllm_models:/root/.cache/huggingface
+    env_file:
+      - .env
+    command:
+      - --model
+      - Qwen/Qwen2.5-14B-Instruct-AWQ
+      - --quantization
+      - awq
+      - --dtype
+      - float16
+      - --max-model-len
+      - "8192"
+      - --port
+      - "8001"
+      - --host
+      - 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
+    networks:
+      - synapse-network
+
+  # ── Ollama (nomic-embed-text, CPU-only, для gpu-demo) ────────────────────
+  # OLLAMA_NUM_GPU=0 — принудительно CPU, чтобы не конкурировать с vLLM
+  # за VRAM RTX 4090. nomic-embed-text ~50–100 ms/query на CPU — достаточно.
+  ollama:
+    image: ollama/ollama:0.24.0
+    container_name: synapse-ollama
+    restart: unless-stopped
+    profiles:
+      - gpu
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_NUM_GPU: "0"          # CPU-only — vLLM держит всю VRAM
+      OLLAMA_HOST: "0.0.0.0:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    # Pull nomic-embed-text on first start (cached in volume afterwards)
+    entrypoint: >
+      /bin/sh -c "ollama serve &
+        sleep 5 &&
+        ollama pull nomic-embed-text &&
+        wait"
+    networks:
+      - synapse-network
+
+  # ── Vector Database ────────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.9.0
+    container_name: synapse-qdrant
+    restart: unless-stopped
+    profiles:
+      - storage
+      - qdrant
+      - gpu
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: "6333"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - synapse-network
+
+  # ── Graph Database ─────────────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5.18.1-community
+    container_name: synapse-neo4j
+    restart: unless-stopped
+    profiles:
+      - storage
+      - neo4j
+      - gpu
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    env_file:
+      - .env
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-synapse_secret}
+      NEO4J_PLUGINS: "[]"
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - synapse-network
+
+  # ── Observability: Langfuse DB ────────────────────────────────────────────
+  postgres:
+    image: postgres:16.14-alpine
+    container_name: synapse-postgres
+    restart: unless-stopped
+    profiles:
+      - observability
+    environment:
+      POSTGRES_DB: langfuse
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - synapse-network
+
+  # ── Observability: Langfuse ───────────────────────────────────────────────
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: synapse-langfuse
+    restart: unless-stopped
+    profiles:
+      - observability
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse_secret}@postgres:5432/langfuse
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-synapse_langfuse_secret_32chars}
+      NEXTAUTH_URL: http://localhost:3000
+      SALT: ${LANGFUSE_SALT:-synapse_salt_changeme}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/public/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 40s
+    networks:
+      - synapse-network
+
+  # ── Observability: Prometheus ─────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: synapse-prometheus
+    restart: unless-stopped
+    profiles:
+      - observability
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    networks:
+      - synapse-network
+
+  # ── Observability: Grafana ────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: synapse-grafana
+    restart: unless-stopped
+    profiles:
+      - observability
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-synapse_grafana}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+    networks:
+      - synapse-network
+
+  # ── Reverse Proxy ─────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25.5-alpine
+    container_name: synapse-nginx
+    restart: unless-stopped
+    profiles:
+      - proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - synapse-network
+
+# ── Volumes ────────────────────────────────────────────────────────────────
+volumes:
+  ollama_models:
+    name: synapse-ollama-models
+  qdrant_data:
+    name: synapse-qdrant-data
+  neo4j_data:
+    name: synapse-neo4j-data
+  neo4j_logs:
+    name: synapse-neo4j-logs
+  vllm_models:
+    name: synapse-vllm-models
+  postgres_data:
+    name: synapse-postgres-data
+  prometheus_data:
+    name: synapse-prometheus-data
+  grafana_data:
+    name: synapse-grafana-data
+
+# ── Network ────────────────────────────────────────────────────────────────
+networks:
+  synapse-network:
+    name: synapse-network
+    driver: bridge

@@ -1,0 +1,924 @@
+openapi: "3.1.0"
+
+info:
+  title: Synapse GraphRAG Knowledge Platform API
+  version: "1.0.0"
+  description: |
+    REST API корпоративной платформы интеллектуального анализа знаний на основе GraphRAG.
+    Работает полностью в закрытом корпоративном контуре (on-premise / air-gapped).
+
+    ## Аутентификация
+
+    В MVP роль пользователя передаётся через HTTP-заголовок `X-User-Role`.
+    JWT и интеграция с LDAP/AD запланированы на Scale-этап.
+
+    ## Уровни доступа
+
+    | Роль       | Access Level | Доступные документы                              |
+    |------------|:------------:|--------------------------------------------------|
+    | junior     | 1            | Публичные регламенты, онбординг-материалы        |
+    | middle     | 2            | + Технические стандарты, инженерные практики     |
+    | senior     | 3            | + Архитектурные решения, ADR, системные документы|
+    | manager    | 4            | + HR-политики, процессы согласований             |
+    | admin      | 5            | Все документы + Explorer режим                   |
+
+  contact:
+    name: Алеся Мороз
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8000
+    description: Local / GPU Dev
+
+tags:
+  - name: System
+    description: Служебные эндпоинты
+  - name: Ingestion
+    description: Загрузка и индексация документов
+  - name: Query
+    description: Q&A — вопросы к корпусу знаний
+  - name: Graph
+    description: Knowledge Graph — просмотр и навигация
+  - name: Ontology
+    description: Управление доменной онтологией
+  - name: Knowledge Gaps
+    description: Пробелы в базе знаний
+
+# ---------------------------------------------------------------------------
+# Общий заголовок безопасности (применяется ко всем защищённым эндпоинтам)
+# ---------------------------------------------------------------------------
+components:
+  securitySchemes:
+    UserRole:
+      type: apiKey
+      in: header
+      name: X-User-Role
+      description: |
+        Роль пользователя: `junior` | `middle` | `senior` | `manager` | `admin`.
+        Определяет числовой `access_level` (1–5) для RBAC-фильтрации.
+
+  # -------------------------------------------------------------------------
+  # Переиспользуемые схемы
+  # -------------------------------------------------------------------------
+  schemas:
+
+    # --- Общие ---
+
+    ErrorResponse:
+      type: object
+      required: [error, detail]
+      properties:
+        error:
+          type: string
+          example: "FORBIDDEN"
+        detail:
+          type: string
+          example: "Access level 1 is insufficient for the requested document."
+
+    ValidationErrorResponse:
+      type: object
+      required: [error, detail]
+      properties:
+        error:
+          type: string
+          example: "VALIDATION_ERROR"
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              type:
+                type: string
+
+    # --- Ingestion ---
+
+    IngestRequest:
+      type: object
+      required: [doc_id, doc_type, access_level, last_updated, content]
+      properties:
+        doc_id:
+          type: string
+          description: Уникальный идентификатор документа
+          example: "arch-001"
+        doc_type:
+          type: string
+          enum: [standard, adr, policy, onboarding, technical, hr]
+          description: Тип документа
+          example: "adr"
+        access_level:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Минимальный уровень доступа для просмотра документа
+          example: 3
+        last_updated:
+          type: string
+          format: date
+          description: Дата последнего обновления документа
+          example: "2025-11-01"
+        content:
+          type: string
+          description: |
+            Текстовое содержимое документа (plain text или Markdown).
+            Для бинарных форматов (PDF, DOCX, XLSX) передавайте base64-encoded файл через `file_base64`.
+          example: "# ADR-001\n\nИспользуем vLLM для инференса..."
+        file_base64:
+          type: string
+          format: byte
+          description: Base64-encoded файл (PDF / DOCX / XLSX). Альтернатива полю `content`.
+        file_mime:
+          type: string
+          description: MIME-тип файла при использовании `file_base64`
+          example: "application/pdf"
+        source:
+          type: string
+          description: Источник / путь к оригинальному файлу
+          example: "docs/ADR/ADR-001.md"
+
+    IngestResponse:
+      type: object
+      required: [doc_id, status, chunks_created, nodes_created, extraction_source]
+      properties:
+        doc_id:
+          type: string
+          example: "arch-001"
+        status:
+          type: string
+          enum: [success, partial, failed]
+          example: "success"
+        chunks_created:
+          type: integer
+          description: Количество чанков, записанных в Qdrant
+          example: 24
+        nodes_created:
+          type: integer
+          description: Количество узлов, добавленных в Neo4j
+          example: 11
+        relations_created:
+          type: integer
+          description: Количество рёбер, добавленных в Neo4j
+          example: 8
+        extraction_source:
+          type: string
+          enum: [native, ocr, vision]
+          description: Способ извлечения текста
+          example: "native"
+        token_count:
+          type: integer
+          description: Итоговый объём токенов после очистки
+          example: 4820
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Некритичные предупреждения при обработке
+          example: []
+
+    # --- Query ---
+
+    QueryRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 3
+          maxLength: 2000
+          description: Вопрос на русском языке
+          example: "Какую модель embeddings использует Synapse и почему?"
+        session_id:
+          type: string
+          description: Идентификатор сессии для сохранения контекста диалога (опционально, Scale-этап)
+          example: "ses-abc123"
+        stream:
+          type: boolean
+          default: true
+          description: Использовать Server-Sent Events для потоковой передачи ответа
+
+    QueryResponse:
+      type: object
+      required: [answer, sources, quality_score, confidence_score, gap_detected]
+      properties:
+        answer:
+          type: string
+          description: Сгенерированный ответ на вопрос
+          example: "Synapse использует nomic-embed-text (768 dim) через embedding adapter. Выбор обусловлен поддержкой русского языка и возможностью локального развёртывания без внешних API (ADR-006)."
+        sources:
+          type: array
+          description: Список источников, использованных при генерации
+          items:
+            $ref: "#/components/schemas/SourceReference"
+        quality_score:
+          type: number
+          format: float
+          minimum: 1
+          maximum: 5
+          description: Оценка CriticAgent (LLM-as-a-Judge), 1–5
+          example: 4.2
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: "Актуальность источников: 1 - (age_days / 365), усреднённая по источникам"
+          example: 0.87
+        gap_detected:
+          type: boolean
+          description: Флаг — запрос зафиксирован как Knowledge Gap
+          example: false
+        iterations:
+          type: integer
+          description: Количество выполненных retry-итераций CriticAgent
+          example: 1
+        trace_id:
+          type: string
+          description: ID трейса в Langfuse для отладки
+          example: "trace-7f4a2b9e"
+
+    SourceReference:
+      type: object
+      required: [doc_id, section, last_updated, access_level]
+      properties:
+        doc_id:
+          type: string
+          example: "arch-001"
+        section:
+          type: string
+          example: "## 2. Решение"
+        last_updated:
+          type: string
+          format: date
+          example: "2025-11-01"
+        access_level:
+          type: integer
+          example: 3
+        retrieval_score:
+          type: number
+          format: float
+          description: "Взвешенный скор: 0.7 × vector + 0.3 × graph"
+          example: 0.91
+
+    # --- Graph ---
+
+    GraphNode:
+      type: object
+      required: [id, label, type, access_level]
+      properties:
+        id:
+          type: string
+          example: "node-vllm-001"
+        label:
+          type: string
+          example: "vLLM"
+        type:
+          type: string
+          enum: [Concept, System, Document, Section, Person, Process]
+          example: "System"
+        access_level:
+          type: integer
+          example: 2
+        properties:
+          type: object
+          additionalProperties: true
+          example:
+            version: "0.6.x"
+            doc_id: "arch-001"
+
+    GraphEdge:
+      type: object
+      required: [source, target, relation]
+      properties:
+        source:
+          type: string
+          example: "node-vllm-001"
+        target:
+          type: string
+          example: "node-qwen-001"
+        relation:
+          type: string
+          example: "SERVES"
+        weight:
+          type: number
+          format: float
+          example: 1.0
+
+    GraphResponse:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphEdge"
+        total_nodes:
+          type: integer
+          example: 142
+        total_edges:
+          type: integer
+          example: 318
+
+    # --- Knowledge Gaps ---
+
+    KnowledgeGap:
+      type: object
+      required: [id, query_hash, detected_at, status]
+      properties:
+        id:
+          type: string
+          example: "gap-001"
+        query_hash:
+          type: string
+          description: SHA-256 текста запроса (не plain text)
+          example: "a3f1b2..."
+        detected_at:
+          type: string
+          format: date-time
+          example: "2026-05-17T10:32:00Z"
+        status:
+          type: string
+          enum: [open, in_progress, resolved]
+          example: "open"
+        user_role:
+          type: string
+          example: "senior"
+        quality_score_at_detection:
+          type: number
+          format: float
+          example: 1.8
+
+    # --- Ontology ---
+
+    OntologyTerm:
+      type: object
+      required: [canonical, type, aliases]
+      properties:
+        canonical:
+          type: string
+          description: Каноническое имя сущности
+          example: "GitLab"
+        type:
+          type: string
+          enum: [System, Concept, Person, Process, Document]
+          example: "System"
+        aliases:
+          type: array
+          items:
+            type: string
+          example: ["gitlab", "наш gitlab", "система контроля версий"]
+        description:
+          type: string
+          example: "Корпоративная система контроля версий"
+
+    OntologyResponse:
+      type: object
+      required: [terms, version, updated_at]
+      properties:
+        terms:
+          type: array
+          items:
+            $ref: "#/components/schemas/OntologyTerm"
+        version:
+          type: string
+          example: "1.3.0"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-05-10T08:00:00Z"
+
+  # -------------------------------------------------------------------------
+  # Переиспользуемые ответы
+  # -------------------------------------------------------------------------
+  responses:
+    400BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "BAD_REQUEST"
+            detail: "Field 'query' must not be empty."
+
+    403Forbidden:
+      description: Недостаточный уровень доступа
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "FORBIDDEN"
+            detail: "Access level 2 is insufficient. Required: 3."
+
+    404NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "NOT_FOUND"
+            detail: "Document 'arch-999' not found."
+
+    422UnprocessableEntity:
+      description: Ошибка валидации входных данных
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationErrorResponse"
+
+    500InternalServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "INTERNAL_ERROR"
+            detail: "LLM inference failed after 3 retries."
+
+# =============================================================================
+# PATHS
+# =============================================================================
+paths:
+
+  # ---------------------------------------------------------------------------
+  # GET /health
+  # ---------------------------------------------------------------------------
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      description: Проверка работоспособности сервиса и подключённых компонентов.
+      operationId: getHealth
+      responses:
+        "200":
+          description: Сервис работает нормально
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, components]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                    example: "ok"
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  components:
+                    type: object
+                    properties:
+                      qdrant:
+                        type: string
+                        enum: [ok, error]
+                        example: "ok"
+                      neo4j:
+                        type: string
+                        enum: [ok, error]
+                        example: "ok"
+                      llm:
+                        type: string
+                        enum: [ok, error]
+                        example: "ok"
+                      postgres:
+                        type: string
+                        enum: [ok, error]
+                        example: "ok"
+        "500":
+          $ref: "#/components/responses/500InternalServerError"
+
+  # ---------------------------------------------------------------------------
+  # POST /ingest
+  # ---------------------------------------------------------------------------
+  /ingest:
+    post:
+      tags: [Ingestion]
+      summary: Загрузить и проиндексировать документ
+      description: |
+        Принимает документ, выполняет Document Preparation Pipeline:
+        парсинг → очистка → OCR (при необходимости) → Vision (опционально) →
+        структурирование → нормализация терминов (ontology.json) → chunking →
+        embeddings → запись в Qdrant и Neo4j.
+
+        Документ отклоняется (422) если:
+        - текст пустой после очистки
+        - `access_level` не указан
+        - объём менее 100 токенов
+      operationId: ingestDocument
+      security:
+        - UserRole: []
+      parameters:
+        - name: X-User-Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [junior, middle, senior, manager, admin]
+          description: |
+            Роль пользователя. Загрузка документов доступна только ролям `manager` и `admin`.
+          example: "admin"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+            example:
+              doc_id: "arch-001"
+              doc_type: "adr"
+              access_level: 3
+              last_updated: "2025-11-01"
+              content: "# ADR-001: LLM Serving\n\n## Статус\nПринято\n\n## Контекст\nSynapse требует production-grade LLM serving..."
+              source: "docs/ADR/ADR-001-llm-serving.md"
+      responses:
+        "200":
+          description: Документ успешно проиндексирован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResponse"
+              example:
+                doc_id: "arch-001"
+                status: "success"
+                chunks_created: 24
+                nodes_created: 11
+                relations_created: 8
+                extraction_source: "native"
+                token_count: 4820
+                warnings: []
+        "400":
+          $ref: "#/components/responses/400BadRequest"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "422":
+          $ref: "#/components/responses/422UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/500InternalServerError"
+
+  # ---------------------------------------------------------------------------
+  # POST /query
+  # ---------------------------------------------------------------------------
+  /query:
+    post:
+      tags: [Query]
+      summary: Задать вопрос корпусу знаний
+      description: |
+        Выполняет GraphRAG-pipeline:
+        1. Input Guardrails (PII, prompt injection)
+        2. Параллельный retrieval: Qdrant (vector, RBAC) + Neo4j (graph, RBAC)
+        3. Merge: `0.7 × vector + 0.3 × graph`
+        4. GeneratorAgent → ответ
+        5. CriticAgent (LLM-as-a-Judge) → `quality_score`
+        6. При `quality_score < 3` и `iterations < 3` — retry (п. 2–5)
+        7. Output Guardrails (PII фильтрация)
+
+        При `stream=true` (по умолчанию) ответ передаётся через **Server-Sent Events**
+        с Content-Type: `text/event-stream`. Финальный JSON-объект передаётся
+        в событии `data: [DONE]`.
+      operationId: queryKnowledgeBase
+      security:
+        - UserRole: []
+      parameters:
+        - name: X-User-Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [junior, middle, senior, manager, admin]
+          description: Роль пользователя, определяет `access_level` для RBAC-фильтрации
+          example: "senior"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryRequest"
+            example:
+              query: "Какую модель embeddings использует Synapse и почему?"
+              stream: true
+      responses:
+        "200":
+          description: |
+            **Если `stream=false`:** JSON-ответ.
+
+            **Если `stream=true`:** Server-Sent Events.
+            Каждый токен передаётся как `data: <token>\n\n`.
+            Финальный объект — `data: [DONE] <json>\n\n`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResponse"
+              example:
+                answer: "Synapse использует nomic-embed-text (768 dim) через embedding adapter. Выбор обусловлен поддержкой русского языка и возможностью локального развёртывания без внешних API (ADR-006)."
+                sources:
+                  - doc_id: "adr-006"
+                    section: "## Решение"
+                    last_updated: "2025-11-01"
+                    access_level: 2
+                    retrieval_score: 0.91
+                  - doc_id: "add-main"
+                    section: "## 2. Technology Stack"
+                    last_updated: "2026-05-16"
+                    access_level: 3
+                    retrieval_score: 0.84
+                quality_score: 4.2
+                confidence_score: 0.87
+                gap_detected: false
+                iterations: 1
+                trace_id: "trace-7f4a2b9e"
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Поток SSE-событий. Каждая строка: `data: <chunk>\n\n`
+                  Финал: `data: [DONE] {"answer":...,"sources":...}\n\n`
+        "400":
+          $ref: "#/components/responses/400BadRequest"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "422":
+          $ref: "#/components/responses/422UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/500InternalServerError"
+
+  # ---------------------------------------------------------------------------
+  # GET /graph
+  # ---------------------------------------------------------------------------
+  /graph:
+    get:
+      tags: [Graph]
+      summary: Получить подграф Knowledge Graph
+      description: |
+        Возвращает узлы и рёбра Knowledge Graph, доступные пользователю
+        с учётом его `access_level` (только узлы с `access_level ≤ уровню пользователя`).
+        Доступен пользователям с уровнем 5 (admin) для Explorer-режима.
+
+        Поддерживает фильтрацию по типу узла и поиск по метке.
+      operationId: getGraph
+      security:
+        - UserRole: []
+      parameters:
+        - name: X-User-Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+          description: Требуется роль `admin` (access_level = 5) для Explorer-режима
+          example: "admin"
+        - name: node_type
+          in: query
+          schema:
+            type: string
+            enum: [Concept, System, Document, Section, Person, Process]
+          description: Фильтр по типу узла
+          example: "System"
+        - name: label
+          in: query
+          schema:
+            type: string
+          description: Поиск по подстроке метки узла (case-insensitive)
+          example: "vLLM"
+        - name: depth
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 3
+            default: 2
+          description: Глубина обхода графа от найденных узлов
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          description: Максимальное количество возвращаемых узлов
+      responses:
+        "200":
+          description: Подграф успешно получен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphResponse"
+              example:
+                nodes:
+                  - id: "node-vllm-001"
+                    label: "vLLM"
+                    type: "System"
+                    access_level: 2
+                    properties:
+                      version: "0.6.x"
+                      doc_id: "arch-001"
+                  - id: "node-qwen-001"
+                    label: "Qwen2.5-14B-AWQ"
+                    type: "System"
+                    access_level: 2
+                    properties:
+                      doc_id: "arch-001"
+                edges:
+                  - source: "node-vllm-001"
+                    target: "node-qwen-001"
+                    relation: "SERVES"
+                    weight: 1.0
+                total_nodes: 142
+                total_edges: 318
+        "400":
+          $ref: "#/components/responses/400BadRequest"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "500":
+          $ref: "#/components/responses/500InternalServerError"
+
+  # ---------------------------------------------------------------------------
+  # GET /knowledge-gaps
+  # ---------------------------------------------------------------------------
+  /knowledge-gaps:
+    get:
+      tags: [Knowledge Gaps]
+      summary: Получить список Knowledge Gaps
+      description: |
+        Возвращает запросы, которые агент не смог ответить (quality_score < 2 после 3 итераций).
+        Доступен только ролям `manager` и `admin`.
+      operationId: getKnowledgeGaps
+      security:
+        - UserRole: []
+      parameters:
+        - name: X-User-Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [manager, admin]
+          description: Требуется роль `manager` или `admin`
+          example: "admin"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, in_progress, resolved]
+          description: Фильтр по статусу
+          example: "open"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Список Knowledge Gaps
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/KnowledgeGap"
+                  total:
+                    type: integer
+                    example: 7
+              example:
+                items:
+                  - id: "gap-001"
+                    query_hash: "a3f1b2c9..."
+                    detected_at: "2026-05-17T10:32:00Z"
+                    status: "open"
+                    user_role: "senior"
+                    quality_score_at_detection: 1.8
+                total: 7
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "500":
+          $ref: "#/components/responses/500InternalServerError"
+
+  # ---------------------------------------------------------------------------
+  # GET /ontology
+  # ---------------------------------------------------------------------------
+  /ontology:
+    get:
+      tags: [Ontology]
+      summary: Получить текущую онтологию
+      description: |
+        Возвращает доменную онтологию (`ontology.json`), используемую для нормализации
+        терминов при индексации документов.
+      operationId: getOntology
+      security:
+        - UserRole: []
+      parameters:
+        - name: X-User-Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [junior, middle, senior, manager, admin]
+          example: "senior"
+      responses:
+        "200":
+          description: Текущая онтология
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OntologyResponse"
+              example:
+                terms:
+                  - canonical: "GitLab"
+                    type: "System"
+                    aliases: ["gitlab", "наш gitlab", "система контроля версий"]
+                    description: "Корпоративная система контроля версий"
+                  - canonical: "vLLM"
+                    type: "System"
+                    aliases: ["vllm", "inference server", "llm сервер"]
+                    description: "OpenAI-compatible inference сервер"
+                version: "1.3.0"
+                updated_at: "2026-05-10T08:00:00Z"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "500":
+          $ref: "#/components/responses/500InternalServerError"
+
+    # ---------------------------------------------------------------------------
+    # POST /ontology
+    # ---------------------------------------------------------------------------
+    post:
+      tags: [Ontology]
+      summary: Добавить или обновить термин онтологии
+      description: |
+        Добавляет новый канонический термин или обновляет существующий.
+        Требует роль `admin`.
+
+        После обновления онтологии новые документы будут нормализоваться
+        по обновлённому словарю. Существующие чанки не переиндексируются
+        автоматически (необходима повторная загрузка через `/ingest`).
+      operationId: upsertOntologyTerm
+      security:
+        - UserRole: []
+      parameters:
+        - name: X-User-Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [admin]
+          example: "admin"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OntologyTerm"
+            example:
+              canonical: "Kubernetes"
+              type: "System"
+              aliases: ["k8s", "кубернетис", "kubernetes cluster"]
+              description: "Оркестратор контейнеров (Scale-этап)"
+      responses:
+        "200":
+          description: Термин сохранён
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [canonical, action]
+                properties:
+                  canonical:
+                    type: string
+                    example: "Kubernetes"
+                  action:
+                    type: string
+                    enum: [created, updated]
+                    example: "created"
+                  version:
+                    type: string
+                    example: "1.4.0"
+        "400":
+          $ref: "#/components/responses/400BadRequest"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "422":
+          $ref: "#/components/responses/422UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/500InternalServerError"

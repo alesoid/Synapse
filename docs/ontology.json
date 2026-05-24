@@ -1,0 +1,156 @@
+{
+  "version": "1.0",
+  "description": "Domain ontology for Synapse Corp knowledge graph. Canonical entity names with aliases for fuzzy deduplication (FR-39, FR-40a, FR-40b).",
+  "entities": [
+    {
+      "canonical": "Tech Lead",
+      "type": "Role",
+      "aliases": ["тимлид", "тех лид", "техлид", "team lead", "teamlead", "tech-lead"]
+    },
+    {
+      "canonical": "HR",
+      "type": "Department",
+      "aliases": ["hr-отдел", "hr отдел", "отдел кадров", "кадры", "people team", "people ops"]
+    },
+    {
+      "canonical": "IT-отдел",
+      "type": "Department",
+      "aliases": ["it отдел", "ит отдел", "отдел ит", "it department", "it team", "айти"]
+    },
+    {
+      "canonical": "CTO",
+      "type": "Role",
+      "aliases": ["технический директор", "chief technology officer"]
+    },
+    {
+      "canonical": "DevOps",
+      "type": "Role",
+      "aliases": ["девопс", "devops-инженер", "devops engineer", "инфраструктурная команда"]
+    },
+    {
+      "canonical": "QA",
+      "type": "Role",
+      "aliases": ["qa-инженер", "тестировщик", "quality assurance", "qa engineer", "тестирование"]
+    },
+    {
+      "canonical": "Product Manager",
+      "type": "Role",
+      "aliases": ["pm", "продакт", "product owner", "po", "менеджер продукта"]
+    },
+    {
+      "canonical": "SRE",
+      "type": "Role",
+      "aliases": ["site reliability engineer", "инженер надёжности"]
+    },
+    {
+      "canonical": "GitLab",
+      "type": "System",
+      "aliases": ["gitlab", "гитлаб", "наш gitlab", "система контроля версий", "git", "репозиторий"]
+    },
+    {
+      "canonical": "Slack",
+      "type": "System",
+      "aliases": ["slack", "слак", "корпоративный мессенджер", "мессенджер"]
+    },
+    {
+      "canonical": "Jira",
+      "type": "System",
+      "aliases": ["jira", "джира", "трекер задач", "task tracker", "система задач"]
+    },
+    {
+      "canonical": "Confluence",
+      "type": "System",
+      "aliases": ["confluence", "конфлюенс", "вики", "wiki", "корпоративная вики"]
+    },
+    {
+      "canonical": "Zoom",
+      "type": "System",
+      "aliases": ["zoom", "зум", "видеоконференция", "видеосвязь"]
+    },
+    {
+      "canonical": "VPN",
+      "type": "System",
+      "aliases": ["vpn", "впн", "корпоративный vpn", "виртуальная частная сеть"]
+    },
+    {
+      "canonical": "SSO",
+      "type": "System",
+      "aliases": ["sso", "single sign-on", "единый вход", "корпоративный sso"]
+    },
+    {
+      "canonical": "MFA",
+      "type": "Process",
+      "aliases": ["mfa", "2fa", "двухфакторная аутентификация", "двухфактор", "multifactor"]
+    },
+    {
+      "canonical": "CI/CD",
+      "type": "Process",
+      "aliases": ["ci/cd", "cicd", "ci cd", "непрерывная интеграция", "continuous integration", "continuous delivery", "пайплайн"]
+    },
+    {
+      "canonical": "Код-ревью",
+      "type": "Process",
+      "aliases": ["code review", "code-review", "ревью кода", "mr review", "pr review", "проверка кода"]
+    },
+    {
+      "canonical": "Онбординг",
+      "type": "Process",
+      "aliases": ["onboarding", "адаптация", "введение в должность", "пребординг", "прибординг"]
+    },
+    {
+      "canonical": "Merge Request",
+      "type": "Process",
+      "aliases": ["mr", "merge-request", "pull request", "pr", "мерж реквест", "запрос на слияние"]
+    },
+    {
+      "canonical": "Sprint",
+      "type": "Process",
+      "aliases": ["спринт", "iteration", "итерация"]
+    },
+    {
+      "canonical": "Инцидент",
+      "type": "Process",
+      "aliases": ["incident", "авария", "p0", "p1", "инцидент безопасности", "security incident"]
+    },
+    {
+      "canonical": "NDA",
+      "type": "Document",
+      "aliases": ["nda", "соглашение о неразглашении", "non-disclosure agreement"]
+    },
+    {
+      "canonical": "ADR",
+      "type": "Document",
+      "aliases": ["adr", "architecture decision record", "архитектурное решение"]
+    },
+    {
+      "canonical": "RFC",
+      "type": "Document",
+      "aliases": ["rfc", "request for comments", "техническое предложение"]
+    },
+    {
+      "canonical": "Docker",
+      "type": "System",
+      "aliases": ["docker", "докер", "контейнер", "container"]
+    },
+    {
+      "canonical": "Kubernetes",
+      "type": "System",
+      "aliases": ["kubernetes", "k8s", "кубернетес", "кубер", "оркестратор контейнеров"]
+    },
+    {
+      "canonical": "Доступ",
+      "type": "Concept",
+      "aliases": ["access", "права доступа", "permissions", "привилегии", "iam", "роль доступа"]
+    },
+    {
+      "canonical": "Технический долг",
+      "type": "Concept",
+      "aliases": ["tech debt", "technical debt", "техдолг", "тех. долг", "td"]
+    },
+    {
+      "canonical": "Архитектура",
+      "type": "Concept",
+      "aliases": ["architecture", "архитектурное решение", "system design", "архитектурная схема"]
+    }
+  ]
+}

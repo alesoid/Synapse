@@ -1,0 +1,1 @@
+"""Embedding backend adapters."""
