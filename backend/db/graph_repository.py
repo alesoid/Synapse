@@ -86,7 +86,7 @@ _MERGE_RELATIONSHIP = (
 
 _MERGE_RELATIONSHIPS_BATCH = (
     "UNWIND $rows AS row "
-    "MATCH (a {id: row.from_id}), (b {id: row.to_id}) "
+    "MATCH (a {{id: row.from_id}}), (b {{id: row.to_id}}) "
     "MERGE (a)-[r:{rel_type}]->(b) "
     "RETURN count(r) AS merged"
 )
