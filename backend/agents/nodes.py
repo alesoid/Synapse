@@ -123,7 +123,11 @@ class AgentNodes:
 
     async def generator(self, state: AgentState) -> dict:
         """Call the LLM with the top-5 context chunks (async — non-blocking I/O)."""
-        context = [s.text for s in state["sources"][:5]]
+        # Include doc_id and section_title so the LLM can reference documents by name
+        context = [
+            f"[{s.doc_id}] {s.section_title}\n{s.text}"
+            for s in state["sources"][:5]
+        ]
         llm = get_llm_client(self._s)
         gen = await llm.generate_answer(state["query"], state["access_level"], context=context)
         logger.info("[generator] trace_id=%s", gen.trace_id)
