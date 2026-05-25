@@ -39,14 +39,15 @@ class QdrantVectorRetriever:
 
         embeddings = get_embeddings_client(self._settings)
         client = get_pool().qdrant          # shared — no new connection per request
-        response = client.query_points(
+        vector = embeddings.embed_query(query)
+        results = client.search(
             collection_name=self._settings.qdrant_collection,
-            query=embeddings.embed_query(query),
+            query_vector=vector,
             query_filter=build_qdrant_rbac_filter(user_access_level),
             limit=limit,
         )
         chunks: list[RetrievedChunk] = []
-        for result in response.points:
+        for result in results:
             payload = result.payload or {}
             chunks.append(
                 RetrievedChunk(
