@@ -67,6 +67,7 @@ class QueryRequest(BaseModel):
 
 class SourceReference(BaseModel):
     doc_id: str
+    doc_title: str | None = None   # human-readable document name from corpus manifest
     section: str
     access_level: int
     last_updated: str | None = None

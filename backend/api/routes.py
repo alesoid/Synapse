@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 logger = logging.getLogger(__name__)
 
 from backend.agents.graph_agent import run_agent
+from backend.ingestion.corpus_loader import get_doc_title
 from backend.api.schemas import (
     AuditLogResponse,
     ComponentHealth,
@@ -91,12 +92,13 @@ async def query(
         sources=[
             SourceReference(
                 doc_id=source.doc_id,
+                doc_title=get_doc_title(source.doc_id),
                 section=source.section_title,
                 access_level=source.access_level,
                 last_updated=source.last_updated,
                 retrieval_score=source.score,
             )
-            for source in result.sources
+            for source in result.sources[:5]   # top-5 most relevant only
         ],
         quality_score=result.quality_score,
         confidence_score=result.confidence_score,

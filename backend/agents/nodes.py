@@ -41,6 +41,7 @@ from backend.db.gap_store import record_gap
 from backend.llm.client import get_llm_client
 from backend.query.critic import get_critic
 from backend.query.pipeline import _compute_confidence, _merge, extract_entities
+from backend.ingestion.corpus_loader import get_doc_title
 from backend.retrieval.graph_retriever import get_graph_retriever
 from backend.retrieval.vector_retriever import get_vector_retriever
 from backend.security.pii import mask_pii
@@ -172,9 +173,9 @@ class AgentNodes:
 
     async def generator(self, state: AgentState) -> dict:
         """Call the LLM with the top-5 context chunks (async — non-blocking I/O)."""
-        # Include doc_id and section_title so the LLM can reference documents by name
+        # Include doc_id + human title so the LLM can reference documents by name
         context = [
-            f"[{s.doc_id}] {s.section_title}\n{s.text}"
+            f"[{s.doc_id}: {get_doc_title(s.doc_id)}] {s.section_title}\n{s.text}"
             for s in state["sources"][:5]
         ]
         llm = get_llm_client(self._s)
