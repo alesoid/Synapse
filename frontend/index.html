@@ -333,7 +333,11 @@
             </span>
             <span class="text-xs text-slate-400">score ${(s.retrieval_score ?? 0).toFixed(3)}</span>
           </div>
-          <p class="text-sm font-medium text-slate-700 truncate mb-2" title="${escHtml(s.section)}">
+          ${s.doc_title ? `
+          <p class="text-sm font-semibold text-slate-800 mb-1 leading-snug" title="${escHtml(s.doc_title)}">
+            ${escHtml(s.doc_title)}
+          </p>` : ''}
+          <p class="text-xs text-slate-500 truncate mb-2" title="${escHtml(s.section)}">
             ${escHtml(s.section)}
           </p>
           <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
