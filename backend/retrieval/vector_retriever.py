@@ -45,6 +45,7 @@ class QdrantVectorRetriever:
             query_vector=vector,
             query_filter=build_qdrant_rbac_filter(user_access_level),
             limit=limit,
+            with_payload=True,
         )
         chunks: list[RetrievedChunk] = []
         for result in results:
