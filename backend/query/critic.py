@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -52,6 +53,36 @@ class MockCriticAgent:
             )
 
         return CriticResult(quality_score=score, feedback=feedback)
+
+
+def _parse_score(raw: str) -> float:
+    """Extract a numeric score in [1.0, 4.0] from an LLM response string.
+
+    Handles common vLLM output variations:
+      - plain number: "3.5"
+      - comma decimal (Russian locale): "3,5"
+      - text with embedded number: "Оценка: 3.5", "Score: 3.5"
+      - markdown bold: "**3.5**"
+      - trailing newlines / whitespace (already stripped by caller)
+
+    Raises ValueError only if no number is found at all.
+    """
+    # Normalise comma-as-decimal-separator (Russian/European locale)
+    normalised = raw.replace(",", ".")
+    # Try direct parse first (fastest path)
+    try:
+        return max(1.0, min(4.0, float(normalised)))
+    except ValueError:
+        pass
+    # Regex: find first occurrence of d[.d] in range 1–4
+    match = re.search(r"\b([1-4](?:\.\d+)?)\b", normalised)
+    if match:
+        return max(1.0, min(4.0, float(match.group(1))))
+    # Broader fallback: any decimal number in the string
+    match = re.search(r"\d+(?:\.\d+)?", normalised)
+    if match:
+        return max(1.0, min(4.0, float(match.group())))
+    raise ValueError(f"[critic] cannot extract numeric score from: {raw!r}")
 
 
 class VLLMCriticAgent:
@@ -111,8 +142,9 @@ class VLLMCriticAgent:
             )
             resp.raise_for_status()
             raw = resp.json()["choices"][0]["message"]["content"].strip()
-            score = max(1.0, min(4.0, float(raw)))
-            logger.info("[critic] vLLM score=%.1f sources=%d", score, n)
+            logger.debug("[critic] vLLM raw response: %r", raw)
+            score = _parse_score(raw)
+            logger.info("[critic] vLLM score=%.1f sources=%d raw=%r", score, n, raw)
             return CriticResult(
                 quality_score=round(score, 1),
                 feedback=f"vLLM critic score: {score:.1f} ({n} source(s))",
