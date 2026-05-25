@@ -119,6 +119,55 @@ class AgentNodes:
         )
         return {"sources": sources}
 
+    # ── Node: role-aware context ──────────────────────────────────────────────
+
+    # Deterministic focus hints per access level — no extra LLM call, O(1) latency.
+    # Each hint steers the generator to surface the nuances most relevant to the role.
+    _ROLE_HINTS: dict[int, str] = {
+        1: (
+            "Пользователь — Junior (L1). "
+            "Давай пошаговые инструкции: что делать, в каком порядке, куда обращаться. "
+            "Называй конкретные документы и ответственных лиц. "
+            "Избегай сложных технических деталей и финансовых показателей."
+        ),
+        2: (
+            "Пользователь — Middle (L2). "
+            "Включай технические детали и рабочие инструменты. "
+            "Упоминай связи между процессами и командами. "
+            "Фокус: как работает процесс, какие стандарты применяются."
+        ),
+        3: (
+            "Пользователь — Senior (L3). "
+            "Раскрывай архитектурные решения, технические стандарты и ограничения. "
+            "Описывай зависимости между системами и командами, объясняй причины решений. "
+            "Фокус: технические нюансы, trade-offs, лучшие практики."
+        ),
+        4: (
+            "Пользователь — Manager (L4). "
+            "Акцентируй ответственность, владельцев процессов, метрики и compliance. "
+            "Выдели контрольные точки, риски и эскалационные пути. "
+            "Фокус: управление, соответствие регламентам, команды и SLA."
+        ),
+        5: (
+            "Пользователь — Admin (L5). "
+            "Предоставь полную информацию включая конфиденциальные секции. "
+            "Включай детали управления доступом, исключения и нестандартные случаи. "
+            "Фокус: исчерпывающая картина без ограничений по уровню доступа."
+        ),
+    }
+
+    def role_context(self, state: AgentState) -> dict:
+        """Produce a role-specific focus hint for the generator.
+
+        Deterministic: maps access_level → a prompt instruction that steers
+        the LLM to emphasise the aspects most relevant to the user's role.
+        No LLM call — O(1) latency, fully predictable for any access level.
+        """
+        level = state["access_level"]
+        hint = self._ROLE_HINTS.get(level, self._ROLE_HINTS[1])
+        logger.info("[role_context] access_level=%d → hint set (%d chars)", level, len(hint))
+        return {"role_hint": hint}
+
     # ── Node: generation ──────────────────────────────────────────────────────
 
     async def generator(self, state: AgentState) -> dict:
@@ -129,7 +178,12 @@ class AgentNodes:
             for s in state["sources"][:5]
         ]
         llm = get_llm_client(self._s)
-        gen = await llm.generate_answer(state["query"], state["access_level"], context=context)
+        gen = await llm.generate_answer(
+            state["query"],
+            state["access_level"],
+            context=context,
+            role_hint=state.get("role_hint", ""),
+        )
         logger.info("[generator] trace_id=%s", gen.trace_id)
         return {"answer": gen.answer, "trace_id": gen.trace_id}
 

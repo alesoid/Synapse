@@ -21,6 +21,7 @@ class LLMClient(Protocol):
         query: str,
         access_level: int,
         context: list[str] | None = None,
+        role_hint: str = "",
     ) -> GenerationResult: ...
 
 
@@ -40,6 +41,7 @@ class MockLLMClient:
         query: str,
         access_level: int,
         context: list[str] | None = None,
+        role_hint: str = "",
     ) -> GenerationResult:
         t0 = time.perf_counter()
 
@@ -78,13 +80,20 @@ class VLLMClient:
         query: str,
         access_level: int,
         context: list[str] | None = None,
+        role_hint: str = "",
     ) -> GenerationResult:
-        ctx_block = ""
+        # System message: base prompt + role-specific focus + knowledge-base context
+        system_parts = [self._SYSTEM_PROMPT]
+        if role_hint:
+            system_parts.append(role_hint)
         if context:
-            ctx_block = "\n\nКонтекст из базы знаний:\n" + "\n---\n".join(context)
+            system_parts.append(
+                "\n\nКонтекст из базы знаний:\n" + "\n---\n".join(context)
+            )
+        system_content = "\n\n".join(system_parts)
 
         messages = [
-            {"role": "system", "content": self._SYSTEM_PROMPT + ctx_block},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": query},
         ]
 

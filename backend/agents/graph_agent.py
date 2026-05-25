@@ -7,7 +7,7 @@ Topology (ADR-004, FR-45):
         → [Send] vector_retriever ──┐
         → [Send] graph_retriever  ──┤  (parallel, FR-45)
                                     ↓
-                              merge_results → generator → critic → confidence_score
+                              merge_results → role_context → generator → critic → confidence_score
                                     → ┌ retry (quality < threshold, iter < max) → [Send] re-dispatch
                                       ├ knowledge_gap (quality < gap_threshold)  → END
                                       └ output_guard  (quality ≥ threshold)      → END
@@ -54,6 +54,7 @@ def build_graph(settings: Settings):
     workflow.add_node("vector_retriever", nodes.vector_retriever)
     workflow.add_node("graph_retriever",  nodes.graph_retriever)
     workflow.add_node("merge_results",    nodes.merge_results)
+    workflow.add_node("role_context",     nodes.role_context)    # role-aware focus hint
     workflow.add_node("generator",        nodes.generator)
     workflow.add_node("critic",           nodes.critic)
     workflow.add_node("confidence_score", nodes.confidence_score)
@@ -63,9 +64,10 @@ def build_graph(settings: Settings):
     # Wire edges
     workflow.add_edge(START, "prepare_query")
     workflow.add_conditional_edges("prepare_query", nodes.dispatch_retrievers)   # fan-out
-    workflow.add_edge("vector_retriever", "merge_results")                      # fan-in
-    workflow.add_edge("graph_retriever",  "merge_results")                      # fan-in
-    workflow.add_edge("merge_results",    "generator")
+    workflow.add_edge("vector_retriever", "merge_results")                       # fan-in
+    workflow.add_edge("graph_retriever",  "merge_results")                       # fan-in
+    workflow.add_edge("merge_results",    "role_context")
+    workflow.add_edge("role_context",     "generator")
     workflow.add_edge("generator",        "critic")
     workflow.add_edge("critic",           "confidence_score")
     workflow.add_conditional_edges(

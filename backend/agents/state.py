@@ -25,6 +25,7 @@ class AgentState(TypedDict):
     vector_chunks: list[RetrievedChunk]
     graph_results: list[GraphResult]
     sources: list[MergedSource]
+    role_hint: str                    # role-specific focus prompt, set by role_context node
     answer: str
     quality_score: float
     confidence_score: float
@@ -42,6 +43,7 @@ def make_initial_state(query: str, access_level: int) -> AgentState:
         vector_chunks=[],
         graph_results=[],
         sources=[],
+        role_hint="",
         answer="",
         quality_score=0.0,
         confidence_score=0.0,
