@@ -3,9 +3,9 @@ GraphRAG StateGraph — topology, compilation cache, and public entry point.
 
 Topology (ADR-004, FR-45):
 
-  START → prepare_query
-        → [Send] vector_retriever ──┐
-        → [Send] graph_retriever  ──┤  (parallel, FR-45)
+  START → prepare_query → query_rewriter
+        → [Send] vector_retriever ──┐  (uses query_rewritten for embedding)
+        → [Send] graph_retriever  ──┤  (uses entities from prepare_query, parallel, FR-45)
                                     ↓
                               merge_results → role_context → generator → critic → confidence_score
                                     → ┌ retry (quality < threshold, iter < max) → [Send] re-dispatch
@@ -50,7 +50,8 @@ def build_graph(settings: Settings):
     workflow = StateGraph(AgentState)
 
     # Register all nodes
-    workflow.add_node("prepare_query",    nodes.prepare_query)   # preprocessing: strip + entities
+    workflow.add_node("prepare_query",    nodes.prepare_query)   # strip + entity extraction
+    workflow.add_node("query_rewriter",   nodes.query_rewriter)  # LLM query → document-style terms
     workflow.add_node("vector_retriever", nodes.vector_retriever)
     workflow.add_node("graph_retriever",  nodes.graph_retriever)
     workflow.add_node("merge_results",    nodes.merge_results)
@@ -63,7 +64,8 @@ def build_graph(settings: Settings):
 
     # Wire edges
     workflow.add_edge(START, "prepare_query")
-    workflow.add_conditional_edges("prepare_query", nodes.dispatch_retrievers)   # fan-out
+    workflow.add_edge("prepare_query", "query_rewriter")
+    workflow.add_conditional_edges("query_rewriter", nodes.dispatch_retrievers)  # fan-out
     workflow.add_edge("vector_retriever", "merge_results")                       # fan-in
     workflow.add_edge("graph_retriever",  "merge_results")                       # fan-in
     workflow.add_edge("merge_results",    "role_context")

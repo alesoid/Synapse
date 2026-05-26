@@ -22,6 +22,7 @@ class AgentState(TypedDict):
     query: str
     access_level: int
     entities: list[str]               # extracted once in prepare_query (FR-41a), stable across retries
+    query_rewritten: str              # document-style reformulation for better vector recall
     vector_chunks: list[RetrievedChunk]
     graph_results: list[GraphResult]
     sources: list[MergedSource]
@@ -40,6 +41,7 @@ def make_initial_state(query: str, access_level: int) -> AgentState:
         query=query,
         access_level=access_level,
         entities=[],
+        query_rewritten="",
         vector_chunks=[],
         graph_results=[],
         sources=[],

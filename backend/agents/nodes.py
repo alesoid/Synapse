@@ -42,6 +42,7 @@ from backend.llm.client import get_llm_client
 from backend.query.critic import get_critic
 from backend.query.pipeline import _compute_confidence, _merge, extract_entities
 from backend.ingestion.corpus_loader import get_doc_title
+from backend.query.rewriter import get_query_rewriter
 from backend.retrieval.graph_retriever import get_graph_retriever
 from backend.retrieval.vector_retriever import get_vector_retriever
 from backend.security.pii import mask_pii
@@ -82,12 +83,32 @@ class AgentNodes:
         )
         return {"query": query, "entities": entities}
 
+    # ── Node: query rewriting ─────────────────────────────────────────────────
+
+    def query_rewriter(self, state: AgentState) -> dict:
+        """Rewrite the user query into document-search style for better recall.
+
+        Converts question-phrased queries ("Как проходит онбординг?") into
+        keyword/term-rich document-style phrases ("процедура адаптации этапы
+        документы ответственные") before vector embedding. The original query
+        is preserved in state["query"] for the generator and critic.
+
+        Graph retrieval is unaffected — it uses entities from prepare_query,
+        which are already ontology-resolved canonical terms.
+        """
+        rewriter = get_query_rewriter(self._s)
+        rewritten = rewriter.rewrite(state["query"])
+        return {"query_rewritten": rewritten}
+
     # ── Node: parallel retrieval (FR-45) ──────────────────────────────────────
 
     def vector_retriever(self, state: AgentState) -> dict:
         """VectorRetrieverAgent — runs in parallel with graph_retriever (FR-45)."""
         retriever = get_vector_retriever(self._s)
-        chunks = retriever.search(state["query"], state["access_level"])
+        # Use rewritten query for embedding if available — better recall via
+        # document-style phrasing. Falls back to original query transparently.
+        search_query = state.get("query_rewritten") or state["query"]
+        chunks = retriever.search(search_query, state["access_level"])
         logger.info(
             "[vector_retriever] found %d chunks (iter=%d)",
             len(chunks), state["iterations"],
