@@ -52,16 +52,21 @@ _GRAPH_SEARCH = """
     MATCH (start)
     WHERE toLower(start.name) CONTAINS toLower(name)
       AND COALESCE(start.access_level, 1) <= $access_level
-    MATCH (start)-[*1..$depth]-(related)
+    MATCH path = (start)-[*1..$depth]-(related)
     WHERE COALESCE(related.access_level, 1) <= $access_level
-    WITH DISTINCT related
-    WHERE related.doc_id IS NOT NULL
+      AND related.doc_id IS NOT NULL
+    WITH related,
+         count(DISTINCT name) AS match_count,
+         min(length(path))    AS min_distance
     RETURN
-        related.doc_id        AS doc_id,
-        related.id            AS section_id,
-        related.title         AS section_title,
+        related.doc_id          AS doc_id,
+        related.id              AS section_id,
+        related.title           AS section_title,
         related.content_summary AS summary,
-        related.access_level  AS access_level
+        related.access_level    AS access_level,
+        match_count             AS match_count,
+        min_distance            AS min_distance
+    ORDER BY match_count DESC, min_distance ASC
     LIMIT 20
 """
 

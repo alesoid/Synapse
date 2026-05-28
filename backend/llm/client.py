@@ -22,6 +22,7 @@ class LLMClient(Protocol):
         access_level: int,
         context: list[str] | None = None,
         role_hint: str = "",
+        retry_feedback: str = "",
     ) -> GenerationResult: ...
 
 
@@ -42,6 +43,7 @@ class MockLLMClient:
         access_level: int,
         context: list[str] | None = None,
         role_hint: str = "",
+        retry_feedback: str = "",
     ) -> GenerationResult:
         t0 = time.perf_counter()
 
@@ -81,11 +83,17 @@ class VLLMClient:
         access_level: int,
         context: list[str] | None = None,
         role_hint: str = "",
+        retry_feedback: str = "",
     ) -> GenerationResult:
-        # System message: base prompt + role-specific focus + knowledge-base context
+        # System message: base prompt + role-specific focus + retry feedback + knowledge-base context
         system_parts = [self._SYSTEM_PROMPT]
         if role_hint:
             system_parts.append(role_hint)
+        if retry_feedback:
+            system_parts.append(
+                f"Предыдущая попытка получила замечание: «{retry_feedback}». "
+                "Учти его и исправь недостатки в новом ответе."
+            )
         if context:
             system_parts.append(
                 "\n\nКонтекст из базы знаний:\n" + "\n---\n".join(context)

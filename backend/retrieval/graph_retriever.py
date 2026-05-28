@@ -13,6 +13,8 @@ class GraphResult:
     section_title: str
     summary: str
     access_level: int
+    match_count: int = 1   # how many query entities connected to this node
+    hop_distance: int = 2  # minimum graph distance from a matching entity (1 = direct)
 
 
 class Neo4jGraphRetriever:
@@ -40,6 +42,8 @@ class Neo4jGraphRetriever:
                 section_title=row.get("section_title", ""),
                 summary=row.get("summary", ""),
                 access_level=int(row.get("access_level", 0)),
+                match_count=int(row.get("match_count", 1)),
+                hop_distance=int(row.get("min_distance", 2)),
             )
             for row in rows
         ]

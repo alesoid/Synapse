@@ -1,9 +1,13 @@
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from backend.ingestion.document_processor import SUPPORTED_SUFFIXES, extract_text
 from backend.ingestion.models import DocumentMetadata, PreparedDocument
+
+logger = logging.getLogger(__name__)
 
 # ── Title lookup (manifest-based, cached once per process) ───────────────────
 
@@ -46,11 +50,40 @@ def load_markdown_corpus(
     manifest_path: Path,
     corpus_dir: Path,
 ) -> list[PreparedDocument]:
+    """Load all supported documents from *corpus_dir* according to *manifest_path*.
+
+    Supported formats: .md (Markdown), .pdf (native text layer via PyMuPDF).
+    Unsupported formats are skipped with a warning.
+    Files listed in the manifest but missing on disk are also skipped.
+
+    The function name is kept for backward compatibility; it now handles
+    any format listed in ``document_processor.SUPPORTED_SUFFIXES``.
+    """
     documents: list[PreparedDocument] = []
     for metadata in load_manifest(manifest_path):
         path = corpus_dir / metadata.filename
-        if path.suffix.lower() != ".md":
+        suffix = path.suffix.lower()
+
+        if suffix not in SUPPORTED_SUFFIXES:
+            logger.debug(
+                "[corpus_loader] skipping '%s': format '%s' not yet supported "
+                "(see ADR-013 for DOCX/XLSX/OCR roadmap)",
+                metadata.filename, suffix,
+            )
             continue
-        text = path.read_text(encoding="utf-8")
+
+        try:
+            text = extract_text(path)
+        except FileNotFoundError:
+            logger.warning("[corpus_loader] file not found, skipping: %s", path)
+            continue
+        except NotImplementedError as exc:
+            logger.warning("[corpus_loader] %s", exc)
+            continue
+
+        logger.debug(
+            "[corpus_loader] loaded '%s' (%s, %d chars)",
+            metadata.filename, suffix, len(text),
+        )
         documents.append(PreparedDocument(metadata=metadata, path=path, text=text))
     return documents
