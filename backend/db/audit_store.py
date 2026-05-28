@@ -150,7 +150,14 @@ def record_audit(
 
 
 def list_audit(limit: int = 200) -> list[dict]:
-    """Return the most recent *limit* audit records, newest first (admin only)."""
+    """Return the most recent *limit* audit records, newest first (admin only).
+
+    Returns an empty list when the store is not initialised (consistent with
+    record_audit()'s graceful-degradation behaviour).
+    """
+    if _conn is None:
+        logger.warning("[audit_store] not initialised — list_audit() returns empty")
+        return []
     rows = _get_conn().execute(
         "SELECT id, user_role, access_level, query_hash, "
         "result_count, quality_score, gap_detected, timestamp "
@@ -173,5 +180,10 @@ def list_audit(limit: int = 200) -> list[dict]:
 
 
 def count_audit() -> int:
-    """Return total number of audit records."""
+    """Return total number of audit records.
+
+    Returns 0 when the store is not initialised.
+    """
+    if _conn is None:
+        return 0
     return _get_conn().execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]

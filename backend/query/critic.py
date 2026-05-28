@@ -55,6 +55,24 @@ class MockCriticAgent:
         return CriticResult(quality_score=score, feedback=feedback)
 
 
+def _parse_score_and_feedback(raw: str) -> tuple[float, str]:
+    """Extract score and feedback from 'ЧИСЛО | ПОЯСНЕНИЕ' LLM response.
+
+    Handles:
+      "3.5 | Ответ ссылается на INS-HR-001, но не раскрывает шаги"  → (3.5, "Ответ ссылается...")
+      "3.5"                                                           → (3.5, "")
+      "Оценка: 3.5"                                                   → (3.5, "")
+    """
+    if "|" in raw:
+        score_part, feedback_part = raw.split("|", 1)
+        score = _parse_score(score_part.strip())
+        feedback = feedback_part.strip()
+    else:
+        score = _parse_score(raw)
+        feedback = ""
+    return score, feedback
+
+
 def _parse_score(raw: str) -> float:
     """Extract a numeric score in [1.0, 4.0] from an LLM response string.
 
@@ -104,22 +122,23 @@ class VLLMCriticAgent:
 
     _SYSTEM_PROMPT = (
         "Ты оцениваешь качество ответа корпоративного AI-ассистента. "
-        "Верни ТОЛЬКО одно число от 1.0 до 4.0 без пояснений.\n\n"
+        "Верни ответ строго в формате: ЧИСЛО | ПОЯСНЕНИЕ\n"
+        "где ЧИСЛО — оценка от 1.0 до 4.0, ПОЯСНЕНИЕ — одно предложение на русском.\n\n"
         "Шкала:\n"
         "4.0 — полный конкретный ответ, цитирует документы, все ключевые детали есть\n"
         "3.0 — частичный ответ, упоминает документы, но не все детали раскрыты\n"
         "2.0 — слабый ответ, общие слова без ссылок на источники\n"
         "1.0 — нет ответа, «информация не найдена» или источников 0\n\n"
         "Примеры:\n"
-        "Вопрос: «Кто отвечает за онбординг новых сотрудников?»\n"
-        "Ответ: «Согласно INS-HR-001, ответственность за адаптацию несёт HR-менеджер "
-        "отдела. Куратор назначается в первый день.» Источников: 3 → 4.0\n\n"
+        "Вопрос: «Кто отвечает за онбординг?»\n"
+        "Ответ: «Согласно INS-HR-001, ответственность несёт HR-менеджер.» Источников: 3\n"
+        "→ 4.0 | Конкретный ответ с указанием документа и ответственного лица\n\n"
         "Вопрос: «Какой бюджет на найм в 2026 году?»\n"
-        "Ответ: «Информация о бюджете на найм в базе знаний отсутствует.» "
-        "Источников: 0 → 1.0\n\n"
+        "Ответ: «Информация отсутствует в базе знаний.» Источников: 0\n"
+        "→ 1.0 | Ответ отсутствует, релевантных документов не найдено\n\n"
         "Вопрос: «Как проходит код-ревью?»\n"
-        "Ответ: «Код-ревью проводится перед мержем. Нужно соблюдать стандарты.» "
-        "Источников: 2 → 2.0"
+        "Ответ: «Код-ревью проводится перед мержем. Нужно соблюдать стандарты.» Источников: 2\n"
+        "→ 2.0 | Ответ слишком общий, не ссылается на конкретный стандарт"
     )
 
     def __init__(self, settings: Settings) -> None:
@@ -138,7 +157,7 @@ class VLLMCriticAgent:
             f"Вопрос: {query}\n\n"
             f"Ответ: {answer[:800]}\n\n"
             f"Источники ({n} шт.):\n{source_list}\n\n"
-            "Оцени от 1.0 до 4.0. Верни только число."
+            "Оцени от 1.0 до 4.0. Верни строго в формате: ЧИСЛО | ПОЯСНЕНИЕ"
         )
 
         try:
@@ -151,17 +170,19 @@ class VLLMCriticAgent:
                         {"role": "user", "content": user_msg},
                     ],
                     "temperature": 0.0,
-                    "max_tokens": 10,
+                    "max_tokens": 80,  # score (≤5 tok) + " | " + one Russian sentence (≤70 tok)
                 },
             )
             resp.raise_for_status()
             raw = resp.json()["choices"][0]["message"]["content"].strip()
             logger.debug("[critic] vLLM raw response: %r", raw)
-            score = _parse_score(raw)
-            logger.info("[critic] vLLM score=%.1f sources=%d raw=%r", score, n, raw)
+            score, feedback = _parse_score_and_feedback(raw)
+            if not feedback:
+                feedback = f"Оценка {score:.1f} / 4.0 ({n} источн.)"
+            logger.info("[critic] vLLM score=%.1f feedback=%r", score, feedback[:60])
             return CriticResult(
                 quality_score=round(score, 1),
-                feedback=f"vLLM critic score: {score:.1f} ({n} source(s))",
+                feedback=feedback,
             )
         except Exception as exc:
             logger.warning(
