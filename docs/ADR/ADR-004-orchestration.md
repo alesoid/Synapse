@@ -23,43 +23,59 @@ Synapse реализует агентную архитектуру с цикла
 
 **LangGraph 0.2+** — stateful граф выполнения на основе StateGraph.
 
-**AgentState:**
+**AgentState** (16 полей, `backend/agents/state.py`):
 ```python
 class AgentState(TypedDict):
-    query: str
-    access_level: int
-    documents: list[dict]
+    query: str                          # исходный запрос пользователя
+    access_level: int                   # уровень доступа 1–5 (из X-User-Role)
+    entities: list[str]                 # онтологически нормализованные сущности (FR-41a)
+    query_rewritten: str                # документо-ориентированная переформулировка (для vector search)
+    vector_chunks: list[RetrievedChunk] # результаты Qdrant
+    graph_results: list[GraphResult]    # результаты Neo4j
+    sources: list[MergedSource]         # гибридный merge (α=0.7 vector + 0.3 graph)
+    role_hint: str                      # ролевая подсказка для генератора
     answer: str
-    quality_score: float
-    confidence_score: float
+    quality_score: float                # оценка критика 1.0–4.0
+    confidence_score: float             # актуальность источников 0–1
     iterations: int
-    sources: list[dict]
     gap_detected: bool
+    trace_id: str
 ```
 
-**StateGraph топология:**
+**StateGraph топология** (11 узлов, `backend/agents/graph_agent.py`):
 ```
 START
-  → input_guard
-  → retrieve
-  → grade_documents
-  → generate
-  → confidence_score
-  → self_reflection
-  ↙ (quality >= 3)    ↘ (quality < 3, iterations < 3)
-output_guard         retrieve (retry)
-  → END              
-  
-self_reflection → knowledge_gap (quality < 2, max iterations)
-  → END
+  → prepare_query          (strip + extract_entities)
+  → query_rewriter         (LLM: вопрос → поисковые термины)
+  → [dispatch_retrievers Send()] ──┬── vector_retriever (Qdrant, использует query_rewritten)
+                                   └── graph_retriever  (Neo4j, использует entities)
+                                             ↓
+                                       merge_results    (α=0.7/0.3 hybrid)
+                                             ↓
+                                       role_context     (детерминированная ролевая подсказка)
+                                             ↓
+                                         generator
+                                             ↓
+                                           critic       (LLM-as-a-Judge, few-shot, 1.0–4.0)
+                                             ↓
+                                     confidence_score
+                                    ↙        ↓          ↘
+                    (retry) [Send()]   output_guard   knowledge_gap
+                         ↓               → END           → END
+                  vector_retriever
+                + graph_retriever
 ```
 
-**Conditional edge:**
+> **Безопасность:** `input_guard` отсутствует как LangGraph-нода. Инъекции и PII маскируются в `QueryRequest.strip_and_guard_query` (FastAPI, `api/schemas.py`) **до** вызова `run_agent()`. `prepare_query` — preprocessing only (strip + entity extraction), не security gate.
+
+**Conditional edge should_retry** (`backend/agents/nodes.py`):
 ```python
-def should_retry(state: AgentState) -> str:
-    if state["quality_score"] < 3 and state["iterations"] < 3:
-        return "retrieve"
-    elif state["quality_score"] < 2:
+def should_retry(self, state: AgentState) -> str | list[Send]:
+    quality = state["quality_score"]
+    iterations = state["iterations"]
+    if quality < self._s.agent_retry_quality_threshold and iterations < self._s.agent_max_iterations:
+        return [Send("vector_retriever", state), Send("graph_retriever", state)]
+    if quality < self._s.agent_gap_quality_threshold:
         return "knowledge_gap"
     return "output_guard"
 ```
@@ -116,5 +132,5 @@ def should_retry(state: AgentState) -> str:
 
 **Этические риски и меры снижения:**
 - Риск бесконечного цикла при нестабильной работе LLM. Мера: жёсткое ограничение `iterations < 3` в conditional edge, принудительный выход в `knowledge_gap` при исчерпании итераций
-- Риск prompt injection через запрос пользователя, который может изменить поведение агента. Мера: нода `input_guard` выполняется первой в графе — до передачи запроса в retrieval и LLM (принцип Security enforced before inference)
+- Риск prompt injection через запрос пользователя, который может изменить поведение агента. Мера: `QueryRequest.strip_and_guard_query` (FastAPI `api/schemas.py`) блокирует инъекции на HTTP-уровне до вызова `run_agent()` — принцип Security enforced before inference. LangGraph-граф физически не получает вредоносные запросы.
 - Все решения агента (quality_score, gap_detected, выбранные ноды) сохраняются в AgentState и логируются в Langfuse — обеспечивается полная объяснимость и аудируемость каждого ответа

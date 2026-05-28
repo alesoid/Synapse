@@ -50,7 +50,7 @@ ROLES = {
 
 **Слой 1 — API Gateway:**
 ```python
-async def get_current_user(role: str = Header(..., alias="X-User-Role")) -> int:
+def role_to_access_level(role: str = Header(..., alias="X-User-Role")) -> int:
     if role not in ROLES:
         raise HTTPException(status_code=403)
     return ROLES[role]

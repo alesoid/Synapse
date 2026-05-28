@@ -78,7 +78,7 @@ client.search(
 ## Последствия
 
 - Коллекция `chunks` создаётся при инициализации системы
-- RBAC фильтр применяется в `hybrid_retriever.py` при каждом поиске
+- RBAC фильтр применяется в `backend/retrieval/vector_retriever.py` (`build_qdrant_rbac_filter()`) при каждом поиске
 - `access_level` и `last_updated` обязательные поля payload — проверяются при ingestion
 - В Scale-этапе: Qdrant Cloud или Milvus при необходимости кластеризации
 

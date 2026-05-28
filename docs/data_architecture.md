@@ -68,7 +68,7 @@
 │  1. Input Guardrails (PII, prompt injection)     │
 │  2. VectorRetrieverAgent → Qdrant (RBAC filter)  │
 │  3. GraphRetrieverAgent  → Neo4j (RBAC filter)   │
-│  4. Merge: 0.7 × vector + 0.3 × graph           │
+│  4. Merge: RRF (alpha=0.7 вектор, k=60)          │
 │  5. GeneratorAgent → vLLM → ответ               │
 │  6. CriticAgent → quality_score                  │
 │  7. Retry если quality_score < 3 (до 3 раз)     │
@@ -320,7 +320,7 @@ filter: access_level≤N  WHERE access_level≤N
         └──────────┬───────────┘
                    ▼
              merge_results
-         0.7 × vector + 0.3 × graph
+         RRF (alpha=0.7 вектор, k=60)
          → ranked документы с источниками
                    │
                    ▼

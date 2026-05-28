@@ -22,7 +22,7 @@ curl http://localhost:8000/health
 # MATCH ()-[r]->() RETURN count(r)  -- > 100 рёбер
 
 # 4. Открыть вкладки заранее:
-#   - React UI:        http://localhost:3000
+#   - UI:              http://localhost:8000/ui/
 #   - Langfuse:        http://localhost:3001
 #   - Neo4j Browser:   http://localhost:7474
 #   - FastAPI Swagger: http://localhost:8000/docs
@@ -52,7 +52,7 @@ curl http://localhost:8000/health
 
 ### Что делать
 
-1. Открыть React UI → роль **senior**
+1. Открыть UI → роль **senior**
 2. Ввести вопрос:
 
 ```
@@ -91,7 +91,7 @@ curl http://localhost:8000/health
 ### Что сказать
 
 > «Система выполнила параллельный поиск в Qdrant и Neo4j,
-> объединила результаты по формуле 0.7×vector + 0.3×graph,
+> объединила результаты через RRF (alpha=0.7, k=60),
 > сгенерировала ответ и оценила его через CriticAgent.
 > quality_score 4.3 — ответ принят с первой итерации.»
 
@@ -105,7 +105,7 @@ curl http://localhost:8000/health
 
 ### Что делать
 
-1. React UI → роль **junior**
+1. UI → роль **junior**
 2. Ввести вопрос:
 
 ```
@@ -148,7 +148,7 @@ curl http://localhost:8000/health
 
 ### Что делать
 
-1. React UI → роль **admin** → вкладка **Explorer**
+1. UI → роль **admin** → вкладка **Explorer**
 2. Показать граф: узлы разных типов (System, Process, Role, Policy, Concept)
 3. Кликнуть на узел `GitLab` — показать связанные документы
 4. Переключиться на **Neo4j Browser** → выполнить запрос:
@@ -179,7 +179,7 @@ LIMIT 50
 
 ### Что делать
 
-1. React UI → роль **senior**
+1. UI → роль **senior**
 2. Ввести вопрос (тема которой нет в корпусе):
 
 ```
@@ -299,7 +299,7 @@ LIMIT 50
 - [ ] Langfuse UI открыт и авторизован
 - [ ] Grafana Dashboard загружен
 - [ ] Swagger UI открыт на `/docs`
-- [ ] React UI открыт на роли junior
+- [ ] UI открыт на роли junior
 - [ ] vLLM логи видны в терминале (tokens/sec)
 - [ ] Микрофон работает
 - [ ] Уведомления на экране отключены

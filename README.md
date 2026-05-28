@@ -2,7 +2,7 @@
 
 > Корпоративная платформа интеллектуального анализа знаний на основе GraphRAG
 
-Synapse — on-premise система для поиска по корпоративным документам, работающая полностью в закрытом контуре без внешних API. Гибридный GraphRAG: 0.7 × векторный поиск (Qdrant) + 0.3 × графовый траверсал (Neo4j) с RBAC на уровне чанков.
+Synapse — on-premise система для поиска по корпоративным документам, работающая полностью в закрытом контуре без внешних API. Гибридный GraphRAG: Qdrant (векторный поиск) + Neo4j (графовый траверсал), слияние через RRF (alpha=0.7, k=60) с RBAC на уровне чанков.
 
 ---
 
@@ -12,8 +12,8 @@ Synapse — on-premise система для поиска по корпорат�
 |------|--------|----------|
 | Корпус документов | ✅ | 15 документов, 5 уровней доступа (access_level 1–5) |
 | Ingestion pipeline | ✅ | Markdown → chunks → Qdrant + Neo4j (mock/real) |
-| Query pipeline | ✅ | Vector + Graph retrieval → merge 0.7/0.3 → LLM |
-| LangGraph агент | ✅ | 9 нод, retry до 3 итераций, knowledge gap detection |
+| Query pipeline | ✅ | Vector + Graph retrieval → RRF merge (alpha=0.7, k=60) → LLM |
+| LangGraph агент | ✅ | 11 нод, retry до 3 итераций, knowledge gap detection |
 | RBAC | ✅ | 5 ролей, 3 слоя: API guard + Qdrant filter + Neo4j WHERE |
 | Guardrails | ✅ | Injection blocking (HTTP 422), input validation |
 | UI | ✅ | SPA на Tailwind + Vanilla JS, role selector, sources, graph view |
@@ -25,7 +25,7 @@ Synapse — on-premise система для поиска по корпорат�
 
 | Тест | Результат |
 |------|-----------|
-| Unit tests | 30/30 PASS |
+| Unit tests | 46/46 PASS |
 | RBAC leakage | 0% (0/10 restricted probes leaked) |
 | Knowledge gap detection | 6/6 PASS |
 | Injection blocking | 3/3 PASS (HTTP 422) |
@@ -146,7 +146,7 @@ synapse/
 │   ├── eval_rbac.py          # RBAC leakage tester (цель 0%)
 │   ├── eval_comparison.py    # GraphRAG vs vector-only
 │   └── load_test.py          # Async load test (P50/P95/P99)
-├── tests/               # 30 unit + integration тестов
+├── tests/               # 38 unit + integration тестов
 └── docs/
     ├── CONCEPT.md
     ├── TECHNICAL_SPEC.md

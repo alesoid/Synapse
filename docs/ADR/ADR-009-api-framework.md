@@ -35,7 +35,7 @@ Synapse требует API Gateway между React UI и backend-сервиса
 @app.post("/query")
 async def query(
     request: QueryRequest,
-    user_level: int = Depends(get_current_user)
+    user_level: int = Depends(role_to_access_level)
 ) -> StreamingResponse:
     return StreamingResponse(
         agent.astream(request.query, user_level),
@@ -64,7 +64,7 @@ async def query(
 - `StreamingResponse` + `astream` — streaming ответов без дополнительных библиотек
 - Pydantic v2 — автоматическая валидация входящих запросов и сериализация ответов
 - OpenAPI UI (`/docs`) — автогенерируемая документация, полезна при демо
-- `Depends()` — чистая реализация dependency injection для RBAC (`get_current_user`)
+- `Depends()` — чистая реализация dependency injection для RBAC (`role_to_access_level`)
 - Самый популярный Python async фреймворк — богатая экосистема, LangChain/LangGraph интеграции
 
 **Минусы FastAPI:**
@@ -77,7 +77,7 @@ async def query(
 
 - API Gateway реализован в `/backend/api/`
 - Все эндпоинты используют `async def` и Pydantic-модели для валидации
-- `Depends(get_current_user)` применяется ко всем защищённым эндпоинтам
+- `Depends(role_to_access_level)` применяется ко всем защищённым эндпоинтам
 - OpenAPI документация доступна на `/docs` — используется при демо для демонстрации API
 - В Scale: Gunicorn с несколькими uvicorn воркерами или K8s горизонтальное масштабирование
 
@@ -91,5 +91,5 @@ async def query(
 - Все входящие запросы валидируются Pydantic до передачи в бизнес-логику — снижается поверхность атаки
 
 **Этические риски и меры снижения:**
-- Риск обхода RBAC через прямые вызовы внутренних эндпоинтов. Мера: `Depends(get_current_user)` применяется на уровне каждого эндпоинта, внутренние сервисы (Qdrant, Neo4j) недоступны снаружи Docker-сети
+- Риск обхода RBAC через прямые вызовы внутренних эндпоинтов. Мера: `Depends(role_to_access_level)` применяется на уровне каждого эндпоинта, внутренние сервисы (Qdrant, Neo4j) недоступны снаружи Docker-сети
 - Риск утечки stack trace в ответе при необработанном исключении. Мера: глобальный exception handler возвращает обезличенное сообщение об ошибке без внутренних деталей реализации

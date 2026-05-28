@@ -25,21 +25,21 @@
 
 ## Решение
 
-**Иерархический chunking:** приоритет разбивки по заголовкам (`MarkdownHeaderTextSplitter`), с fallback на фиксированный размер 500 токенов и overlap 50 при отсутствии структуры.
+**Иерархический chunking:** приоритет разбивки по заголовкам Markdown (H1/H2/H3), с fallback на фиксированный размер 500 «токенов» и overlap 50 при отсутствии структуры.
 
 ```python
+# backend/ingestion/chunker.py
+
 # Шаг 1: разбивка по заголовкам (структурированные документы)
-header_splitter = MarkdownHeaderTextSplitter(
-    headers_to_split_on=[("#", "H1"), ("##", "H2"), ("###", "H3")]
-)
+HEADING_PATTERN = re.compile(r"^(#{1,3})\s+(.+?)\s*$", re.MULTILINE)
+# Кастомная реализация split_markdown_sections() — без зависимости от LangChain
 
 # Шаг 2: fallback — фиксированный размер для неструктурированных блоков
-token_splitter = TokenTextSplitter(
-    chunk_size=500,
-    chunk_overlap=50,
-    encoding_name="cl100k_base"
-)
+TOKEN_PATTERN = re.compile(r"\S+")  # whitespace tokenizer (1 токен ≈ 1 слово)
+# count_tokens() считает слова regex-ом; "500 токенов" ≈ 500 слов
 ```
+
+**Примечание:** реализация использует кастомный regex-сплиттер и whitespace-tokenizer, а не LangChain `MarkdownHeaderTextSplitter` и tiktoken `cl100k_base`. Фактический размер чанка — 500 слов, не sub-word токенов. Это означает, что чанки содержат примерно 650–750 sub-word токенов в среднем по русским текстам.
 
 **Параметры настраиваются** через env vars `CHUNK_SIZE=500` и `CHUNK_OVERLAP=50`.
 
@@ -77,7 +77,7 @@ token_splitter = TokenTextSplitter(
 - Каждый чанк сохраняется в Qdrant с payload и становится узлом `Section` в Neo4j
 - Среднее число чанков на документ: ~10–50 (при типичном документе 5–30 страниц)
 - Смена размера чанка требует полной переиндексации (Qdrant + Neo4j)
-- `ingestion_pipeline.py` логирует число извлечённых чанков на документ (FR-15)
+- `backend/ingestion/chunker.py` логирует число извлечённых чанков на документ (FR-15)
 
 ---
 

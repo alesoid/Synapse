@@ -27,13 +27,13 @@ status: approved
 
 Synapse — корпоративная платформа интеллектуального анализа знаний на основе GraphRAG, работающая полностью в закрытом корпоративном контуре (on-premise / air-gapped). Система строит Knowledge Graph из внутренних документов и отвечает на вопросы сотрудников с учётом их ролевого доступа — без обращения к внешним API.
 
-Ключевое архитектурное решение: вместо простого векторного поиска система комбинирует Qdrant (vector search) и Neo4j (graph traversal) по формуле `0.7 × vector + 0.3 × graph`, получая контекстно-обогащённый результат. LLM получает контекст только после retrieval — генерация без поиска запрещена архитектурно.
+Ключевое архитектурное решение: вместо простого векторного поиска система комбинирует Qdrant (vector search) и Neo4j (graph traversal) через Reciprocal Rank Fusion (RRF) с весами `alpha=0.7` (вектор) и `0.3` (граф), получая контекстно-обогащённый результат. LLM получает контекст только после retrieval — генерация без поиска запрещена архитектурно.
 
 ### 1.2 Ключевые сценарии
 
-**Q&A режим.** Сотрудник задаёт вопрос на русском языке через React UI. LangGraph-агент выполняет гибридный поиск по корпусу документов с учётом роли пользователя (RBAC), генерирует ответ со ссылками на источники и оценкой актуальности (`confidence_score`). При низком качестве ответа агент выполняет Self-Reflection и повторяет поиск (до 3 итераций). Вопросы без ответа фиксируются как Knowledge Gaps.
+**Q&A режим.** Сотрудник задаёт вопрос на русском языке через веб-интерфейс. LangGraph-агент выполняет гибридный поиск по корпусу документов с учётом роли пользователя (RBAC), генерирует ответ со ссылками на источники и оценкой актуальности (`confidence_score`). При низком качестве ответа агент выполняет Self-Reflection и повторно вызывает генератор с `critic_feedback` (generator-only retry, до 3 итераций). Вопросы без ответа фиксируются как Knowledge Gaps.
 
-**Explorer режим.** Admin или Analyst исследует граф знаний визуально в React UI (react-force-graph). Клик по узлу показывает связанные документы и отношения. Режим доступен только пользователям с `access_level = 5`.
+**Explorer режим.** Admin или Analyst исследует граф знаний через веб-интерфейс. Клик по узлу показывает связанные документы и отношения. Режим доступен только пользователям с `access_level = 5`.
 
 ### 1.3 Роли пользователей
 
@@ -62,12 +62,12 @@ Synapse — корпоративная платформа интеллектуа
 
 ADD описывает архитектуру MVP для дипломной защиты и демо, а не production-ready enterprise-платформу. В MVP входят:
 
-- Q&A режим с гибридным поиском GraphRAG (`0.7 × vector + 0.3 × graph`);
+- Q&A режим с гибридным поиском GraphRAG (RRF, `alpha=0.7` вектор, `0.3` граф);
 - RBAC на уровне чанков Qdrant и узлов Neo4j;
 - Input/Output Guardrails;
 - Explorer режим для Admin;
 - Document Preparation Pipeline для PDF, DOCX, XLSX, Markdown, CSV, сканов и опционального vision preprocessing при ingestion;
-- Multi-Agent pipeline: `prepare_query`, параллельный fan-out через `dispatch_retrievers` (LangGraph `Send()` API), `vector_retriever`, `graph_retriever`, `generator`, `critic` (LLM-as-a-Judge);
+- Multi-Agent pipeline: `prepare_query`, `query_rewriter`, параллельный fan-out через `dispatch_retrievers` (LangGraph `Send()` API), `vector_retriever`, `graph_retriever`, `merge_results`, `role_context`, `generator`, `critic` (LLM-as-a-Judge), `confidence_score`, `output_guard` / `knowledge_gap`;
 - Knowledge Gap Detection, Knowledge Confidence Score и Domain Ontology;
 - Observability через OpenTelemetry, Langfuse, Prometheus и Grafana;
 - локальный LLM runtime: local-lite — mock/optional Ollama, gpu-dev/demo — vLLM + Qwen2.5-14B-AWQ.
@@ -87,11 +87,11 @@ ADD описывает архитектуру MVP для дипломной за
 | Graph DB | Neo4j Community | 5.18 | [ADR-003](./ADR/ADR-003-graphdb.md) | Knowledge Graph, Cypher traversal, Explorer визуализация |
 | Orchestration | LangGraph | 0.2+ | [ADR-004](./ADR/ADR-004-orchestration.md), [ADR-012](./ADR/ADR-012-multi-agent.md) | Multi-agent orchestration, parallel retrieval, retry cycles |
 | Access Control | Chunk-level RBAC | — | [ADR-005](./ADR/ADR-005-rbac.md) | Числовой access_level на каждом чанке и узле графа |
-| API | FastAPI + uvicorn | — | — | REST + Streaming, OpenAPI автогенерация |
-| Frontend | React + TypeScript + Tailwind | — | — | Q&A UI, Explorer (react-force-graph) |
+| API | FastAPI + uvicorn | — | — | REST, OpenAPI автогенерация; стриминг SSE — Scale |
+| Frontend | Vanilla HTML + JS + Tailwind CSS | — | [ADR-011](./ADR/ADR-011-frontend.md) | Q&A UI + Explorer (таблица узлов/рёбер); статика раздаётся FastAPI StaticFiles |
 | Tracing | OpenTelemetry SDK + Langfuse | — | [ADR-010](./ADR/ADR-010-observability.md) | OTel spans по FastAPI и LangGraph, экспорт OTLP в Langfuse |
 | Metrics | Prometheus + Grafana | — | [ADR-010](./ADR/ADR-010-observability.md) | RPS, latency, tokens/sec, error rate |
-| Storage | PostgreSQL | 15 | — | Langfuse traces, knowledge_gaps, audit_log |
+| Storage | PostgreSQL | 16 | — | Langfuse traces; `knowledge_gaps` и `audit_log` — SQLite (WAL) в MVP, PostgreSQL — Scale |
 | Infra | Docker Compose | — | — | Единая команда запуска, пинированные версии |
 | GPU Dev | VM 64 GB RAM + NVIDIA RTX 4090 24 GB VRAM | — | — | Основная среда разработки полного stack и предварительных нагрузочных тестов |
 | Cloud / Demo / Prod-like | Yandex Cloud T4 16GB или другой GPU-сервер | — | — | Production-like демо; финальный sizing подтверждается нагрузочным тестом |
@@ -117,16 +117,18 @@ Synapse реализует multi-agent pipeline на LangGraph `StateGraph`. Д�
 | Нода / Компонент | Тип | Назначение |
 |---|---|---|
 | `QueryRequest` (FastAPI) | HTTP layer | Валидация до вызова агента: prompt injection → HTTP 422; PII → маскирование (`api/schemas.py`) |
-| `prepare_query` | Нода | Preprocessing: strip, нормализация, извлечение сущностей запроса |
+| `prepare_query` | Нода | Preprocessing: strip, нормализация, извлечение сущностей из онтологии |
+| `query_rewriter` | Нода | LLM-переформулировка вопроса в документо-ориентированный стиль (улучшение recall) |
 | `dispatch_retrievers` | Conditional edge | Fan-out: запускает `vector_retriever` и `graph_retriever` параллельно через LangGraph `Send()` |
-| `vector_retriever` | Нода | Семантический поиск в Qdrant с RBAC payload filter |
-| `graph_retriever` | Нода | Graph traversal в Neo4j с RBAC `WHERE access_level <= user_level` |
-| `merge_results` | Нода | Объединение результатов по формуле `0.7 × vector + 0.3 × graph` |
-| `generator` | Нода | Генерация ответа через vLLM/Ollama на основе разрешённого контекста |
-| `critic` | Нода | Независимая оценка ответа (LLM-as-a-Judge), выдаёт `quality_score` и `feedback` |
-| `confidence_score` | Нода | Вычисление актуальности: `1 - (age_days / 365)` по `last_updated` источников |
-| `should_retry` | Conditional edge | Маршрутизация: retry via `Send()` / `output_guard` / `knowledge_gap` |
-| `output_guard` | Нода | PII маскирование ответа, финальная проверка перед отдачей пользователю |
+| `vector_retriever` | Нода | Семантический поиск в Qdrant с RBAC payload filter (использует `query_rewritten`) |
+| `graph_retriever` | Нода | Graph traversal в Neo4j с RBAC `WHERE access_level <= user_level` (использует `entities`) |
+| `merge_results` | Нода | Hybrid merge: RRF (`alpha=0.7` вектор, `0.3` граф, `k=60`) |
+| `role_context` | Нода | Детерминированная ролевая подсказка для генератора по `access_level` (L1–L5) |
+| `generator` | Нода | Генерация ответа через vLLM на основе разрешённого контекста + `role_hint`; на retry принимает `critic_feedback` |
+| `critic` | Нода | Независимая оценка ответа (LLM-as-a-Judge, few-shot); выдаёт `quality_score` и `critic_feedback` |
+| `confidence_score` | Нода | Вычисление актуальности источников по `last_updated` |
+| `should_retry` | Conditional edge | Маршрутизация: generator-only retry / `output_guard` / `knowledge_gap` |
+| `output_guard` | Нода | PII маскирование ответа (FR-27) |
 | `knowledge_gap` | Нода | Фиксация неотвеченного запроса в SQLite (`knowledge_gaps` таблица) |
 
 ### 3.2 Граф выполнения
@@ -134,17 +136,18 @@ Synapse реализует multi-agent pipeline на LangGraph `StateGraph`. Д�
 ```mermaid
 graph TD
     START --> prepare_query
-    prepare_query -->|"dispatch_retrievers [Send]"| vector_retriever
-    prepare_query -->|"dispatch_retrievers [Send]"| graph_retriever
+    prepare_query --> query_rewriter
+    query_rewriter -->|"dispatch_retrievers [Send]"| vector_retriever
+    query_rewriter -->|"dispatch_retrievers [Send]"| graph_retriever
     vector_retriever --> merge_results
     graph_retriever --> merge_results
-    merge_results --> generator
+    merge_results --> role_context
+    role_context --> generator
     generator --> critic
     critic --> confidence_score
     confidence_score -->|"quality ≥ threshold"| output_guard
     confidence_score -->|"quality < gap_threshold"| knowledge_gap
-    confidence_score -->|"quality < threshold, iter < max [Send retry]"| vector_retriever
-    confidence_score -->|"quality < threshold, iter < max [Send retry]"| graph_retriever
+    confidence_score -->|"quality < threshold, iter < max [generator-only retry]"| generator
     output_guard --> END
     knowledge_gap --> END
 ```
@@ -156,7 +159,8 @@ Conditional edge `should_retry` (от `confidence_score`):
 ```python
 def should_retry(self, state: AgentState) -> str | list[Send]:
     if quality < retry_threshold and iterations < max_iterations:
-        return [Send("vector_retriever", state), Send("graph_retriever", state)]  # retry fan-out
+        # Generator-only retry: retrieval пропускается, critic_feedback передаётся генератору
+        return [Send("generator", state)]
     if quality < gap_threshold:
         return "knowledge_gap"
     return "output_guard"
@@ -168,23 +172,26 @@ def should_retry(self, state: AgentState) -> str | list[Send]:
 
 ```python
 class AgentState(TypedDict):
-    query: str              # исходный запрос пользователя
-    access_level: int       # уровень доступа из X-User-Role заголовка
-    vector_results: list[dict]
-    graph_results: list[dict]
-    documents: list[dict]   # merged chunks из Qdrant + Neo4j
-    answer: str             # сгенерированный ответ
-    quality_score: float    # оценка CriticAgent (1–5)
-    critic_feedback: str    # объяснение оценки CriticAgent
-    confidence_score: float # актуальность источников (0–1)
-    iterations: int         # счётчик retry
-    sources: list[dict]     # источники: doc_id, section, last_updated
-    gap_detected: bool      # флаг для knowledge_gap ноды
+    query: str                     # исходный запрос пользователя
+    access_level: int              # уровень доступа из X-User-Role заголовка
+    entities: list[str]            # онтологически разрешённые сущности из запроса
+    query_rewritten: str           # переформулированный поисковый запрос (query_rewriter)
+    vector_chunks: list[RetrievedChunk]   # результаты Qdrant (ранее vector_results)
+    graph_results: list[GraphResult]      # результаты Neo4j traversal
+    sources: list[MergedSource]    # merged + ranked результаты из merge_results
+    role_hint: str                 # ролевая подсказка из role_context (детерминированная)
+    answer: str                    # сгенерированный ответ
+    quality_score: float           # оценка CriticAgent (1.0–4.0)
+    critic_feedback: str           # объяснение оценки; передаётся генератору при retry
+    confidence_score: float        # актуальность источников по last_updated (0–1)
+    iterations: int                # счётчик вызовов critic (защита от бесконечного retry)
+    gap_detected: bool             # флаг для knowledge_gap ноды
+    trace_id: str                  # идентификатор трейса (из LLM-ответа)
 ```
 
 ### 3.4 CriticAgent (LLM-as-a-Judge)
 
-`critic` нода выполняет отдельный LLM-вызов после генерации ответа. Она получает вопрос, ответ и источники, возвращает JSON с `quality_score` и `feedback`. При низком `quality_score` и числе итераций меньше максимума `should_retry` повторно запускает параллельный retrieval через `Send()`. При `quality_score < gap_threshold` после максимального числа итераций запрос фиксируется как Knowledge Gap.
+`critic` нода выполняет отдельный LLM-вызов после генерации ответа. Она получает вопрос, ответ и источники, возвращает оценку в формате `ЧИСЛО | ПОЯСНЕНИЕ` (`quality_score` + `critic_feedback`). При низком `quality_score` и числе итераций меньше максимума `should_retry` выполняет **generator-only retry** через `Send("generator", state)` — retrieval пропускается, `critic_feedback` передаётся генератору как `retry_feedback` для адресного улучшения ответа. При `quality_score < gap_threshold` запрос фиксируется как Knowledge Gap (независимо от числа итераций, если retry-порог не срабатывает).
 
 Такой подход устраняет self-assessment bias: генератор не оценивает собственный ответ, а качество проверяет отдельный агент.
 
@@ -245,13 +252,14 @@ RBAC реализован как три последовательных сло�
 **Слой 1 — API Gateway** (`/backend/security/rbac.py`):
 
 ```python
-async def get_current_user(role: str = Header(..., alias="X-User-Role")) -> int:
-    if role not in ROLES:
-        raise HTTPException(status_code=403)
-    return ROLES[role]
+def role_to_access_level(role: str | None) -> int:
+    """Возвращает числовой access_level из X-User-Role заголовка.
+    Неизвестная роль → access_level=1 (минимальный, fail-closed).
+    """
+    return ROLES.get(role or "", 1)
 ```
 
-**Слой 2 — Qdrant** (`/backend/retrieval/hybrid_retriever.py`):
+**Слой 2 — Qdrant** (`/backend/retrieval/vector_retriever.py`):
 
 ```python
 query_filter = Filter(must=[
@@ -274,11 +282,12 @@ RETURN d, s LIMIT 10
 
 | Тип | Что проверяется | Реализация |
 |---|---|---|
-| Input Guard | PII: email, телефон, паспортные данные | regex + NER |
-| Input Guard | Prompt injection: паттерны типа `ignore previous instructions` | regex patterns |
-| Input Guard | Длина запроса: макс. 1000 символов | FastAPI validator |
-| Output Guard | PII в сгенерированном ответе | regex + NER |
-| Output Guard | Нежелательный контент | keyword filter |
+| Input Guard | PII: email, телефон, паспортные данные | regex (`security/pii.py`) |
+| Input Guard | Prompt injection: паттерны типа `ignore previous instructions` | regex (`security/injection.py`) |
+| Input Guard | Длина запроса: макс. 1000 символов | FastAPI Pydantic validator |
+| Output Guard | PII в сгенерированном ответе | regex (`output_guard` нода) |
+
+> NER и keyword-фильтр нежелательного контента не реализованы в MVP (Scale-этап).
 
 ### 5.3 Zero External APIs
 
@@ -433,10 +442,11 @@ LANGFUSE_OTLP_ENDPOINT=http://langfuse:3000/api/public/otel/v1/traces
 ```sql
 CREATE TABLE knowledge_gaps (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    query_text    TEXT NOT NULL,
-    quality_score REAL,
-    iterations    INTEGER,
-    timestamp     TEXT NOT NULL
+    query         TEXT    NOT NULL,   -- текст запроса (намеренно: нужен для анализа пробелов)
+    access_level  INTEGER NOT NULL,   -- уровень доступа пользователя
+    quality_score REAL    NOT NULL,
+    iterations    INTEGER NOT NULL DEFAULT 0,
+    timestamp     TEXT    NOT NULL
 );
 ```
 

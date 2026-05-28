@@ -9,17 +9,19 @@ flowchart TD
         RBAC["role_to_access_level()\naccess_level 1–5"]
     end
 
-    subgraph CP["LangGraph Agent Pipeline (graph_agent.py)"]
+    subgraph CP["LangGraph Agent Pipeline (graph_agent.py) — 11 нод"]
         PQ["prepare_query\nstrip + entity extraction (FR-41a)\nпредобработка — НЕ security gate"]
+        QRW["query_rewriter\nLLM: вопрос → поисковые термины\nулучшение recall векторного поиска"]
 
         subgraph PARALLEL["Параллельный retrieval — LangGraph Send() (FR-45)"]
-            VR["vector_retriever\nQdrant + RBAC payload filter"]
-            GR["graph_retriever\nNeo4j + COALESCE RBAC WHERE"]
+            VR["vector_retriever\nQdrant + RBAC filter\n(использует query_rewritten)"]
+            GR["graph_retriever\nNeo4j + COALESCE RBAC WHERE\n(использует entities)"]
         end
 
-        MR["merge_results\nα=0.7 × vector + 0.3 × graph (FR-45)"]
-        GEN["generator\nVLLMClient / MockLLMClient"]
-        CRIT["critic\nVLLMCriticAgent / MockCriticAgent\nquality_score 1.0–4.0 (FR-47a/b)"]
+        MR["merge_results\nRRF: alpha/(k+rank_v) + graph_signal/(k+rank_g) (FR-45)"]
+        RC["role_context\nдетерминированный role_hint\nL1–L5 → фокус ответа"]
+        GEN["generator\nVLLMClient / MockLLMClient\nsystem_prompt + role_hint + context"]
+        CRIT["critic\nVLLMCriticAgent few-shot / MockCriticAgent\nquality_score 1.0–4.0 (FR-47a/b)"]
         CS["confidence_score\navg(1 − age_days/365) (FR-36a)"]
         OG["output_guard\nPII mask на ответе LLM (FR-27)"]
         KG["knowledge_gap\nзапись пробела (FR-31)"]
@@ -43,8 +45,9 @@ flowchart TD
     VALIDATOR -->|"masked query"| RBAC
     RBAC -->|"query + access_level"| PQ
 
-    PQ -->|"Send() — параллельно"| VR
-    PQ -->|"Send() — параллельно"| GR
+    PQ -->|"entities"| QRW
+    QRW -->|"Send() — параллельно\n(query_rewritten)"| VR
+    QRW -->|"Send() — параллельно\n(entities)"| GR
 
     VR -->|"embed query (inside retriever)"| EMB
     EMB -->|"вектор [768]"| VR
@@ -56,14 +59,14 @@ flowchart TD
     N4J -->|"связанные сущности"| GR
     GR -->|"graph_results"| MR
 
-    MR -->|"топ-5 источников"| GEN
-    GEN -->|"prompt + context"| VLLM
+    MR -->|"sources"| RC
+    RC -->|"role_hint + sources"| GEN
+    GEN -->|"system_prompt + role_hint + context"| VLLM
     VLLM -->|"ответ"| GEN
     GEN -->|"answer + trace_id"| CRIT
     CRIT -->|"quality_score"| CS
 
-    CS -->|"quality < 3.0 AND iter < 3\nretry: Send() (FR-48a)"| VR
-    CS -->|"quality < 3.0 AND iter < 3\nretry: Send() (FR-48a)"| GR
+    CS -->|"quality < 3.0 AND iter < 3\ngenerator-only retry: Send() (FR-48a)"| GEN
     CS -->|"quality < 2.0\nпосле max iterations"| KG
     CS -->|"quality ≥ 3.0\nили quality ≥ 2.0 после max iter"| OG
 

@@ -109,7 +109,7 @@ MVP должен показать ключевые требования курс
 | FR-01 | Система принимает запрос на русском языке от авторизованного пользователя | Functional | PoC | Must Have | AC-02 |
 | FR-02a | Система выполняет векторный поиск по чанкам в Qdrant с RBAC фильтром | Functional | PoC | Must Have | AC-02 |
 | FR-02b | Система выполняет графовый траверсал в Neo4j с RBAC фильтром | Functional | PoC | Must Have | AC-02 |
-| FR-02c | Система объединяет результаты поиска по формуле `score = 0.7 * vector + 0.3 * graph` | AI-specific | PoC | Must Have | AC-02 |
+| FR-02c | Система объединяет результаты поиска через Reciprocal Rank Fusion (RRF): `alpha/(k+rank_v) + (1-alpha)*graph_signal/(k+rank_g)`, `alpha=0.7`, `k=60` | AI-specific | PoC | Must Have | AC-02 |
 | FR-03 | Система возвращает ответ с указанием источников (название документа, раздел) | Functional | PoC | Must Have | AC-02 |
 | FR-04 | Система фильтрует результаты поиска по уровню доступа пользователя до передачи контекста в LLM | Security | MVP | Must Have | AC-03 |
 | FR-06 | Система возвращает streaming-ответ (токены передаются по мере генерации) | Functional | MVP | Should Have | — |

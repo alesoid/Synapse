@@ -68,7 +68,7 @@ RBAC реализован как три последовательных бар�
 # /backend/security/rbac.py
 ROLES = {"junior": 1, "middle": 2, "senior": 3, "manager": 4, "admin": 5}
 
-async def get_current_user(
+def role_to_access_level(
     role: str = Header(..., alias="X-User-Role")
 ) -> int:
     if role not in ROLES:
@@ -84,7 +84,7 @@ async def get_current_user(
 ### 2.3 Слой 2 — Qdrant payload filtering
 
 ```python
-# /backend/retrieval/hybrid_retriever.py
+# /backend/retrieval/vector_retriever.py
 from qdrant_client.models import Filter, FieldCondition, Range
 
 query_filter = Filter(
