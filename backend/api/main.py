@@ -16,6 +16,7 @@ from backend.db.audit_store import close_audit_store, init_audit_store
 from backend.db.gap_store import close_gap_store, init_gap_store
 from backend.db.graph_queries import ensure_indexes
 from backend.db.neo4j_driver import Neo4jDriver
+from backend.observability.tracing import setup_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(router)
+
+    # OpenTelemetry — installs TracerProvider + FastAPIInstrumentor (FR-28a, FR-28b).
+    # Gracefully no-ops if opentelemetry-* packages are not installed.
+    setup_tracing(app)
 
     # Prometheus metrics at /metrics
     try:

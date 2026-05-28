@@ -81,6 +81,7 @@ class QueryResponse(BaseModel):
     confidence_score: float
     gap_detected: bool
     trace_id: str | None = None
+    critic_feedback: str | None = None   # one-sentence quality explanation from critic agent
 
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────

@@ -17,11 +17,12 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-from backend.agents.graph_agent import run_agent
 from backend.ingestion.corpus_loader import get_doc_title
+from backend.query.service import QueryBlockedError, QueryService
 from backend.api.schemas import (
     AuditLogResponse,
     ComponentHealth,
@@ -45,10 +46,15 @@ from backend.security.rbac import ROLES, require_admin, role_to_access_level
 router = APIRouter()
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
+# ── Health / Readiness ───────────────────────────────────────────────────────
 
 @router.get("/health", response_model=HealthResponse)
 async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
+    """Liveness probe — fast process-alive check, no external calls.
+
+    Always returns HTTP 200 if the uvicorn process is running.
+    Use /ready for a dependency connectivity check.
+    """
     return HealthResponse(
         status="ok",
         version=settings.app_version,
@@ -62,6 +68,115 @@ async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
     )
 
 
+# ── Readiness probes (internal helpers) ──────────────────────────────────────
+
+_PROBE_TIMEOUT = 3.0   # seconds per dependency — fail fast, don't block healthcheck
+
+
+async def _probe_qdrant(settings: Settings) -> str:
+    if settings.storage_backend != "qdrant-neo4j":
+        return "skipped"
+    try:
+        from backend.core.connections import get_pool
+        client = get_pool().qdrant
+        # QdrantClient is synchronous — run in thread pool to stay non-blocking
+        await asyncio.wait_for(
+            asyncio.to_thread(client.get_collections),
+            timeout=_PROBE_TIMEOUT,
+        )
+        return "ok"
+    except Exception:
+        logger.warning("[ready] qdrant probe failed", exc_info=True)
+        return "error"
+
+
+async def _probe_neo4j(settings: Settings) -> str:
+    if settings.storage_backend != "qdrant-neo4j":
+        return "skipped"
+    try:
+        from backend.core.connections import get_pool
+        driver = get_pool().neo4j
+        # verify_connectivity() is synchronous — wrap in thread pool
+        await asyncio.wait_for(
+            asyncio.to_thread(driver.verify_connectivity),
+            timeout=_PROBE_TIMEOUT,
+        )
+        return "ok"
+    except Exception:
+        logger.warning("[ready] neo4j probe failed", exc_info=True)
+        return "error"
+
+
+async def _probe_vllm(settings: Settings) -> str:
+    if settings.llm_backend != "vllm":
+        return "skipped"
+    try:
+        from backend.core.connections import get_pool
+        resp = await asyncio.wait_for(
+            get_pool().async_http.get(f"{settings.vllm_host}/health"),
+            timeout=_PROBE_TIMEOUT,
+        )
+        return "ok" if resp.status_code == 200 else "error"
+    except Exception:
+        logger.warning("[ready] vllm probe failed", exc_info=True)
+        return "error"
+
+
+async def _probe_ollama(settings: Settings) -> str:
+    if settings.embeddings_backend != "local":
+        return "skipped"
+    try:
+        from backend.core.connections import get_pool
+        # ollama_http is a sync httpx.Client — wrap in thread pool
+        resp = await asyncio.wait_for(
+            asyncio.to_thread(get_pool().ollama_http.get, "/api/tags"),
+            timeout=_PROBE_TIMEOUT,
+        )
+        return "ok" if resp.status_code == 200 else "error"
+    except Exception:
+        logger.warning("[ready] ollama probe failed", exc_info=True)
+        return "error"
+
+
+@router.get("/ready")
+async def ready(settings: Settings = Depends(get_settings)) -> JSONResponse:
+    """Readiness probe — пингует все зависимости параллельно.
+
+    Returns HTTP 200 when all required components are reachable.
+    Returns HTTP 503 when at least one required component is unreachable.
+
+    Components that are not configured for the current mode return "skipped"
+    and do not affect the overall status.
+
+    Example response (gpu-demo, all up):
+        {"status": "ok", "components": {"qdrant": "ok", "neo4j": "ok",
+                                         "vllm": "ok", "ollama": "ok"}}
+
+    Example response (local-lite, mock mode):
+        {"status": "ok", "components": {"qdrant": "skipped", "neo4j": "skipped",
+                                         "vllm": "skipped", "ollama": "skipped"}}
+    """
+    qdrant_s, neo4j_s, vllm_s, ollama_s = await asyncio.gather(
+        _probe_qdrant(settings),
+        _probe_neo4j(settings),
+        _probe_vllm(settings),
+        _probe_ollama(settings),
+    )
+    components = {
+        "qdrant": qdrant_s,
+        "neo4j":  neo4j_s,
+        "vllm":   vllm_s,
+        "ollama": ollama_s,
+    }
+    failing = [k for k, v in components.items() if v == "error"]
+    http_status = status.HTTP_200_OK if not failing else status.HTTP_503_SERVICE_UNAVAILABLE
+    logger.info("[ready] status=%s components=%s", "ok" if not failing else "degraded", components)
+    return JSONResponse(
+        content={"status": "ok" if not failing else "degraded", "components": components},
+        status_code=http_status,
+    )
+
+
 # ── Query ─────────────────────────────────────────────────────────────────────
 
 @router.post("/query", response_model=QueryResponse)
@@ -71,7 +186,14 @@ async def query(
     settings: Settings = Depends(get_settings),
 ) -> QueryResponse:
     access_level = role_to_access_level(x_user_role)
-    result = await run_agent(payload.query, access_level, settings)
+    try:
+        result = await QueryService(settings).ask(payload.query, access_level)
+    except QueryBlockedError as exc:
+        # Should be caught by Pydantic first (HTTP 422), but guard domain layer too.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
     # ФЗ-152 audit: record every query regardless of outcome.
     # Wrapped in try/except so a storage failure never disrupts the response.
@@ -104,6 +226,7 @@ async def query(
         confidence_score=result.confidence_score,
         gap_detected=result.gap_detected,
         trace_id=result.trace_id,
+        critic_feedback=result.critic_feedback or None,
     )
 
 

@@ -46,17 +46,3 @@ def require_manager_or_admin(role: str | None) -> int:
     )
 
 
-def filter_authorized_items(items: list[dict], user_access_level: int) -> list[dict]:
-    """Return items whose access_level ≤ user_access_level.
-
-    NULL access_level is treated as 1 (public), consistent with the
-    COALESCE(n.access_level, 1) pattern used in Cypher queries.
-    An item with no access_level label is public — not a bypass.
-    """
-    return [
-        item
-        for item in items
-        # COALESCE(access_level, 1): None → level 1 (public), same as Cypher
-        if (item.get("access_level") if item.get("access_level") is not None else 1)
-        <= user_access_level
-    ]
