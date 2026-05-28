@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Synapse — Knowledge Platform</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="tailwind.min.css">
   <style>
     .fade-in { animation: fadeIn 0.25s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -103,14 +103,17 @@
       <!-- Scores row -->
       <div class="flex flex-wrap gap-3 fade-in">
         <!-- Quality -->
-        <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm text-sm">
-          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          <span class="text-slate-500">Качество ответа:</span>
-          <span id="qualityStars" class="font-mono tracking-tight font-semibold"></span>
-          <span id="qualityVal" class="text-slate-400 text-xs"></span>
+        <div class="bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm text-sm">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="text-slate-500">Качество ответа:</span>
+            <span id="qualityStars" class="font-mono tracking-tight font-semibold"></span>
+            <span id="qualityVal" class="text-slate-400 text-xs"></span>
+          </div>
+          <p id="criticFeedback" class="hidden text-xs text-slate-400 italic mt-1 ml-6"></p>
         </div>
 
         <!-- Confidence -->
@@ -296,7 +299,14 @@
       const qs = document.getElementById('qualityStars');
       qs.textContent = stars(d.quality_score);
       qs.className = `font-mono tracking-tight font-semibold ${scoreColor(d.quality_score, [3.5, 2])}`;
-      document.getElementById('qualityVal').textContent = `(${(d.quality_score ?? 0).toFixed(1)} / 5)`;
+      document.getElementById('qualityVal').textContent = `(${(d.quality_score ?? 0).toFixed(1)} / 4)`;
+      const fb = document.getElementById('criticFeedback');
+      if (d.critic_feedback) {
+        fb.textContent = d.critic_feedback;
+        fb.classList.remove('hidden');
+      } else {
+        fb.classList.add('hidden');
+      }
 
       // Confidence
       const conf = document.getElementById('confidenceVal');
