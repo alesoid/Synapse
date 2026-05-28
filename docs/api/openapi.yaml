@@ -262,7 +262,7 @@ components:
         retrieval_score:
           type: number
           format: float
-          description: "Взвешенный скор: 0.7 × vector + 0.3 × graph"
+          description: "RRF-скор: alpha/(k+rank_v) + (1-alpha)*graph_signal/(k+rank_g), alpha=0.7, k=60"
           example: 0.91
 
     # --- Graph ---
@@ -578,10 +578,10 @@ paths:
         Выполняет GraphRAG-pipeline:
         1. Input Guardrails (PII, prompt injection)
         2. Параллельный retrieval: Qdrant (vector, RBAC) + Neo4j (graph, RBAC)
-        3. Merge: `0.7 × vector + 0.3 × graph`
+        3. Merge: RRF (`alpha/(k+rank_v) + (1-alpha)*graph_signal/(k+rank_g)`, alpha=0.7, k=60)
         4. GeneratorAgent → ответ
         5. CriticAgent (LLM-as-a-Judge) → `quality_score`
-        6. При `quality_score < 3` и `iterations < 3` — retry (п. 2–5)
+        6. При `quality_score < 3` и `iterations < 3` — generator-only retry (retrieval пропускается)
         7. Output Guardrails (PII фильтрация)
 
         При `stream=true` (по умолчанию) ответ передаётся через **Server-Sent Events**
