@@ -32,7 +32,7 @@ from langgraph.graph import END, START, StateGraph
 from backend.agents.nodes import AgentNodes
 from backend.agents.state import AgentState, make_initial_state
 from backend.core.config import Settings
-from backend.observability.tracing import get_langfuse_callbacks
+from backend.observability.tracing import get_langfuse_callbacks, tracer
 from backend.query.pipeline import QueryResult
 
 logger = logging.getLogger(__name__)
@@ -123,30 +123,44 @@ def _get_compiled_graph(settings: Settings):
 async def run_agent(query: str, access_level: int, settings: Settings) -> QueryResult:
     """Run the GraphRAG agent and return a QueryResult.
 
+    .. warning::
+        **Internal function — do not call from routes, scripts, or jobs.**
+        Use ``QueryService.ask()`` (``backend/query/service.py``) instead.
+        It applies the injection guard (FR-26) and PII masking (FR-25) before
+        reaching this function, ensuring security regardless of the caller's
+        context.  Direct calls here bypass those checks.
+
     Async so that the LLM I/O (generator node) does not block the event loop.
     LangGraph routes sync nodes through the default executor automatically;
     the async generator node is awaited natively via ainvoke().
-
-    Called by POST /query. The compiled graph is reused across requests.
     """
-    graph = _get_compiled_graph(settings)
-    callbacks = get_langfuse_callbacks(settings)
+    with tracer.start_as_current_span("run_agent") as span:
+        span.set_attribute("user.access_level", access_level)
+        span.set_attribute("query.length", len(query))
 
-    initial = make_initial_state(query, access_level)
-    invoke_config = {"callbacks": callbacks} if callbacks else {}
-    final = await graph.ainvoke(initial, config=invoke_config)
+        graph = _get_compiled_graph(settings)
+        callbacks = get_langfuse_callbacks(settings)
 
-    trace_id = (
-        f"{final['trace_id']}"
-        f"-v{len(final['vector_chunks'])}"
-        f"g{len(final['graph_results'])}"
-        f"-i{final['iterations']}"
-    )
-    return QueryResult(
-        answer=final["answer"],
-        sources=final["sources"],
-        quality_score=final["quality_score"],
-        confidence_score=final["confidence_score"],
-        gap_detected=final["gap_detected"],
-        trace_id=trace_id,
-    )
+        initial = make_initial_state(query, access_level)
+        invoke_config = {"callbacks": callbacks} if callbacks else {}
+        final = await graph.ainvoke(initial, config=invoke_config)
+
+        trace_id = (
+            f"{final['trace_id']}"
+            f"-v{len(final['vector_chunks'])}"
+            f"g{len(final['graph_results'])}"
+            f"-i{final['iterations']}"
+        )
+        span.set_attribute("result.gap_detected", final["gap_detected"])
+        span.set_attribute("result.quality_score", final["quality_score"])
+        span.set_attribute("result.iterations", final["iterations"])
+
+        return QueryResult(
+            answer=final["answer"],
+            sources=final["sources"],
+            quality_score=final["quality_score"],
+            confidence_score=final["confidence_score"],
+            gap_detected=final["gap_detected"],
+            trace_id=trace_id,
+            critic_feedback=final.get("critic_feedback", ""),
+        )
