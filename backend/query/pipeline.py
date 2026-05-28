@@ -42,6 +42,7 @@ class QueryResult:
     confidence_score: float
     gap_detected: bool
     trace_id: str
+    critic_feedback: str = ""
 
 
 def extract_entities(query: str) -> list[str]:
@@ -64,45 +65,108 @@ def extract_entities(query: str) -> list[str]:
     return resolved
 
 
+_RRF_K = 60  # standard RRF constant; higher → smoother rank differences
+
+
 def _merge(
     vector_chunks: list[RetrievedChunk],
     graph_results: list[GraphResult],
     alpha: float = 0.7,
+    k: int = _RRF_K,
 ) -> list[MergedSource]:
-    """Merge vector and graph results with weighted score.
+    """Hybrid merge with Reciprocal Rank Fusion (RRF).
 
-    alpha=1.0 → pure vector-only (HYBRID_ALPHA=1.0 in env).
-    alpha=0.7 → default hybrid (70% vector + 30% graph).
+    Replaces the old ``score * alpha + graph_boost`` formula with rank-based
+    fusion, which is robust to cosine-score scale differences across queries.
+
+    Vector RRF contribution (per item):
+        alpha / (k + rank_v)
+
+    where rank_v is 1-based position sorted by cosine score descending.
+
+    Graph RRF contribution (per item):
+        (1 - alpha) * graph_signal / (k + rank_g)
+
+    where:
+        graph_signal = (match_count / max_match_count) / hop_distance
+        rank_g       = position in graph results sorted by match_count DESC,
+                       hop_distance ASC (closer, more-matched items rank first)
+
+    Items present in both lists accumulate both contributions.
+    Items only in graph get a score proportional to their graph signal
+    instead of the old constant 0.3.
+
+    alpha=1.0 → pure vector (graph contribution is zero).
+    alpha=0.0 → pure graph (vector contribution is zero).
     """
     graph_alpha = 1.0 - alpha
-    graph_keys = {(r.doc_id, r.section_title) for r in graph_results}
+
+    # ── Deduplicate graph results ────────────────────────────────────────────
+    # Per (doc_id, section_title) keep the entry with the highest match_count;
+    # use hop_distance as a tiebreaker (prefer closer nodes).
+    graph_map: dict[tuple[str, str], GraphResult] = {}
+    for r in graph_results:
+        key = (r.doc_id, r.section_title)
+        prev = graph_map.get(key)
+        if prev is None or r.match_count > prev.match_count or (
+            r.match_count == prev.match_count and r.hop_distance < prev.hop_distance
+        ):
+            graph_map[key] = r
+
+    # ── Sort graph results for ranking ───────────────────────────────────────
+    # default=0 + `or 1` guards both the empty-dict case and the all-zeros case.
+    # Using `default=1` alone would still crash when the dict is non-empty but
+    # every match_count == 0 — max() returns 0 and `result.match_count / max_match`
+    # raises ZeroDivisionError.
+    max_match = max((r.match_count for r in graph_map.values()), default=0) or 1
+    sorted_graph = sorted(
+        graph_map.values(),
+        key=lambda r: (-r.match_count, r.hop_distance),
+    )
+
+    # ── Accumulate RRF scores ────────────────────────────────────────────────
+    rrf: dict[str, float] = {}
+
+    # Vector contribution: rank by cosine score descending
+    for rank, chunk in enumerate(
+        sorted(vector_chunks, key=lambda c: c.score, reverse=True)
+    ):
+        rrf_key = f"{chunk.doc_id}::{chunk.section_title}"
+        rrf[rrf_key] = rrf.get(rrf_key, 0.0) + alpha / (k + rank + 1)
+
+    # Graph contribution: rank by match_count (desc) + hop_distance (asc)
+    for rank, result in enumerate(sorted_graph):
+        rrf_key = f"{result.doc_id}::{result.section_title}"
+        # graph_signal rewards more entity matches at shorter distances
+        graph_signal = (result.match_count / max_match) / max(result.hop_distance, 1)
+        rrf[rrf_key] = rrf.get(rrf_key, 0.0) + graph_alpha * graph_signal / (k + rank + 1)
+
+    # ── Build MergedSource objects ───────────────────────────────────────────
     merged: dict[str, MergedSource] = {}
 
     for chunk in vector_chunks:
-        in_graph = (chunk.doc_id, chunk.section_title) in graph_keys
-        score = min(chunk.score * alpha + (graph_alpha if in_graph else 0.0), 1.0)
-        key = f"{chunk.doc_id}::{chunk.section_title}"
-        if key not in merged or merged[key].score < score:
-            merged[key] = MergedSource(
+        rrf_key = f"{chunk.doc_id}::{chunk.section_title}"
+        score = round(rrf.get(rrf_key, 0.0), 4)
+        if rrf_key not in merged or score > merged[rrf_key].score:
+            merged[rrf_key] = MergedSource(
                 doc_id=chunk.doc_id,
                 section_title=chunk.section_title,
                 text=chunk.text,
                 access_level=chunk.access_level,
                 last_updated=chunk.last_updated,
-                score=round(score, 4),
+                score=score,
             )
 
-    seen_keys = set(merged)
-    for result in graph_results:
-        key = f"{result.doc_id}::{result.section_title}"
-        if key not in seen_keys:
-            merged[key] = MergedSource(
+    for result in sorted_graph:
+        rrf_key = f"{result.doc_id}::{result.section_title}"
+        if rrf_key not in merged:
+            merged[rrf_key] = MergedSource(
                 doc_id=result.doc_id,
                 section_title=result.section_title,
                 text=result.summary,
                 access_level=result.access_level,
                 last_updated=None,
-                score=0.3,
+                score=round(rrf.get(rrf_key, 0.0), 4),
             )
 
     return sorted(merged.values(), key=lambda s: s.score, reverse=True)

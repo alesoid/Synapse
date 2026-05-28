@@ -29,6 +29,7 @@ class AgentState(TypedDict):
     role_hint: str                    # role-specific focus prompt, set by role_context node
     answer: str
     quality_score: float
+    critic_feedback: str              # one-sentence explanation from the critic agent
     confidence_score: float
     iterations: int
     gap_detected: bool
@@ -48,6 +49,7 @@ def make_initial_state(query: str, access_level: int) -> AgentState:
         role_hint="",
         answer="",
         quality_score=0.0,
+        critic_feedback="",
         confidence_score=0.0,
         iterations=0,
         gap_detected=False,
