@@ -18,7 +18,7 @@ workspace "Synapse" "Корпоративная платформа интелл�
     synapse = softwareSystem "Synapse" "AI-платформа корпоративных знаний" {
 
       group "Frontend" {
-        ui = container "React UI" "Веб-интерфейс пользователя" "React + TypeScript + Tailwind" {
+        ui = container "Web UI" "Веб-интерфейс пользователя" "Tailwind CDN + Vanilla JS SPA" {
           tags "Frontend"
         }
       }
@@ -38,37 +38,46 @@ workspace "Synapse" "Корпоративная платформа интелл�
             tags "Memory"
           }
 
-          # ── Guardrails ───────────────────────────────────────
-          input_guard = component "InputGuard" "Маскирует PII (email/телефон/паспорт → [MASKED]); блокирует prompt injection (HTTP 422)" "Python + regex" {
+          # ── Security (API layer + domain layer — НЕ LangGraph ноды) ─────────────
+          input_guard = component "InputGuard" "Двухслойная защита: (1) QueryRequest.strip_and_guard_query — Pydantic HTTP gate; (2) QueryService.ask() — domain gate. FR-26 injection block; FR-25 PII mask. Выполняется ДО вызова run_agent()." "api/schemas.py + query/service.py" {
             tags "Planner"
           }
-          output_guard = component "OutputGuard" "Маскирует PII в ответе LLM перед отдачей пользователю" "Python + regex" {
+          output_guard = component "OutputGuard" "Маскирует PII в ответе LLM перед отдачей пользователю (FR-27)" "LangGraph Node — agents/nodes.py" {
             tags "Planner"
           }
 
           # ── Agents ───────────────────────────────────────────
-          dispatch_retrievers_edge = component "dispatch_retrievers" "Conditional edge от prepare_query: запускает vector_retriever и graph_retriever параллельно через LangGraph Send() API (langgraph.constants.Send)" "LangGraph Conditional Edge" {
+          prepare_query_node = component "prepare_query" "Первая нода LangGraph: strip + extract_entities(). НЕ security gate." "LangGraph Node" {
             tags "Planner"
           }
-          vector_retriever = component "vector_retriever" "Семантический поиск в Qdrant с RBAC фильтром (access_level)" "LangGraph Node" {
+          query_rewriter_node = component "query_rewriter" "Перефразирование запроса: вопрос → поисковые термины (document-style) для лучшего vector recall. Записывает query_rewritten в state." "LangGraph Node" {
             tags "Planner"
           }
-          graph_retriever = component "graph_retriever" "Graph traversal в Neo4j по онтологически-нормализованным сущностям; RBAC WHERE access_level <= user_level" "LangGraph Node" {
+          dispatch_retrievers_edge = component "dispatch_retrievers" "Conditional edge от query_rewriter: запускает vector_retriever и graph_retriever параллельно через LangGraph Send() API (langgraph.constants.Send)" "LangGraph Conditional Edge" {
             tags "Planner"
           }
-          merge_results = component "merge_results" "Объединение результатов: score = alpha × vector + (1-alpha) × graph; дедупликация по (doc_id, section)" "Python" {
+          vector_retriever = component "vector_retriever" "Семантический поиск в Qdrant с RBAC фильтром (access_level); использует query_rewritten" "LangGraph Node" {
             tags "Planner"
           }
-          generator_agent = component "generator" "Генерация ответа на основе топ-5 контекстных чанков" "LangGraph Node + vLLM" {
+          graph_retriever = component "graph_retriever" "Graph traversal в Neo4j; RBAC WHERE COALESCE(access_level,1) <= user_level; возвращает match_count + hop_distance" "LangGraph Node" {
             tags "Planner"
           }
-          critic_agent = component "critic" "Оценка ответа: возвращает CriticResult(quality_score: float, feedback: str); в gpu-demo — LLM-as-a-Judge через vLLM" "LangGraph Node" {
+          merge_results = component "merge_results" "RRF-слияние: alpha/(k+rank_v) + (1-alpha)*graph_signal/(k+rank_g); дедупликация по (doc_id, section)" "LangGraph Node — query/pipeline.py" {
             tags "Planner"
           }
-          confidence_score_node = component "ConfidenceScore" "Вычисляет confidence_score = avg(1 - age_days/365) по всем источникам, [0, 1]; маршрутизатор: retry / knowledge_gap / output_guard" "LangGraph Node" {
+          role_context_node = component "role_context" "Детерминированный role_hint по access_level (L1–L5): фокус ответа генератора. Без LLM, O(1)." "LangGraph Node" {
             tags "Planner"
           }
-          knowledge_gap = component "knowledge_gap" "Фиксирует неотвеченный запрос (quality_score < 2 после max iterations) в gap_store (SQLite local-lite / PostgreSQL gpu-demo)" "LangGraph Node" {
+          generator_agent = component "generator" "Генерация ответа на основе топ-5 чанков + role_hint; на retry передаёт critic_feedback как retry_feedback в system_prompt" "LangGraph Node + vLLM" {
+            tags "Planner"
+          }
+          critic_agent = component "critic" "Оценка ответа: CriticResult(quality_score: float, feedback: str); gpu-demo — LLM-as-a-Judge через vLLM" "LangGraph Node" {
+            tags "Planner"
+          }
+          confidence_score_node = component "ConfidenceScore" "confidence_score = avg(1 - age_days/365); маршрутизатор: generator-only retry / knowledge_gap / output_guard" "LangGraph Node" {
+            tags "Planner"
+          }
+          knowledge_gap = component "knowledge_gap" "Фиксирует неотвеченный запрос (quality_score < 2 после max iterations) в SQLite WAL gap_store; PostgreSQL — цель для production, не реализована" "LangGraph Node" {
             tags "Planner"
           }
 
@@ -111,7 +120,7 @@ workspace "Synapse" "Корпоративная платформа интелл�
         neo4j = container "Neo4j" "Knowledge Graph, Cypher traversal" "Neo4j 5.18 Community" {
           tags "DataPlane" "Database"
         }
-        postgres = container "PostgreSQL" "Трейсы Langfuse; Knowledge Gaps (gpu-demo); в local-lite Knowledge Gaps хранятся в SQLite gap_store" "PostgreSQL 15" {
+        postgres = container "PostgreSQL" "Только трейсы Langfuse. Knowledge Gaps хранятся в SQLite WAL (gap_store.py) во всех режимах; PostgreSQL — цель для production, не реализована." "PostgreSQL 16" {
           tags "DataPlane" "Database"
         }
       }
@@ -176,29 +185,32 @@ workspace "Synapse" "Корпоративная платформа интелл�
     prometheus -> grafana "метрики"
 
     # Компоненты — поток данных внутри оркестратора (Multi-Agent, ADR-012)
-    # Топология: input_guard → [Send()] vector_retriever ──┐
-    #                        → [Send()] graph_retriever  ──┤→ merge_results → generator_agent
-    #            → critic_agent → confidence_score_node → {retry / knowledge_gap / output_guard}
-    input_guard -> agent_state "обновляет query, access_level в state"
-    input_guard -> orchestrator_agent "очищенный запрос + access_level"
-    orchestrator_agent -> vector_retriever "Send() — параллельно (FR-45)"
-    orchestrator_agent -> graph_retriever "Send() — параллельно (FR-45)"
+    # Топология: input_guard (API/domain layer) → prepare_query → query_rewriter
+    #            → [Send()] vector_retriever ──┐
+    #            → [Send()] graph_retriever  ──┤→ merge_results → role_context → generator_agent
+    #            → critic_agent → confidence_score_node → {generator-only retry / knowledge_gap / output_guard}
+    input_guard -> agent_state "обновляет query, access_level в state (до LangGraph)"
+    prepare_query_node -> query_rewriter_node "entities извлечены"
+    query_rewriter_node -> vector_retriever "Send() — параллельно, query_rewritten (FR-45)"
+    query_rewriter_node -> graph_retriever "Send() — параллельно, entities (FR-45)"
     vector_retriever -> qdrant_tool "векторный поиск + RBAC payload filter"
-    graph_retriever -> neo4j_tool "graph traversal + RBAC WHERE"
+    graph_retriever -> neo4j_tool "graph traversal + RBAC WHERE + match_count/hop_distance"
     graph_retriever -> ontology_tool "нормализация сущностей (fuzzy match)"
     vector_retriever -> merge_results "vector_chunks"
     graph_retriever -> merge_results "graph_results"
-    merge_results -> generator_agent "топ-5 источников (alpha×vector + (1-alpha)×graph)"
+    merge_results -> role_context_node "sources (RRF-merged)"
+    role_context_node -> generator_agent "role_hint + sources"
     generator_agent -> vllm_tool "генерация ответа (gpu-demo)"
     generator_agent -> critic_agent "answer + sources + query (state transition)"
-    critic_agent -> confidence_score_node "quality_score + feedback → state"
-    confidence_score_node -> output_guard "quality_score >= 3 (FR-48a)"
-    confidence_score_node -> orchestrator_agent "quality_score < 3 и iterations < 3: Send() retry (FR-48a/b)"
+    critic_agent -> confidence_score_node "quality_score + critic_feedback → state"
+    confidence_score_node -> output_guard "quality_score >= threshold (FR-48a)"
+    confidence_score_node -> generator_agent "generator-only retry: Send(generator, state) (FR-48a/b)"
     confidence_score_node -> knowledge_gap "quality_score < 2 после max iterations (FR-31)"
     output_guard -> agent_state "финальный answer (PII-masked)"
-    knowledge_gap -> postgres "записывает неотвеченный запрос (gpu-demo / PostgreSQL)"
+    knowledge_gap -> langfuse_tool "gap_detected=True span"
     input_guard -> langfuse_tool "LangGraph callback trace"
-    orchestrator_agent -> langfuse_tool "LangGraph callback trace"
+    prepare_query_node -> langfuse_tool "LangGraph callback trace"
+    query_rewriter_node -> langfuse_tool "LangGraph callback trace"
     vector_retriever -> langfuse_tool "LangGraph callback trace"
     graph_retriever -> langfuse_tool "LangGraph callback trace"
     generator_agent -> langfuse_tool "LangGraph callback trace"
@@ -215,7 +227,7 @@ workspace "Synapse" "Корпоративная платформа интелл�
             deploymentNode "nginx-container" "nginx:1.25-alpine" "Docker Container" {
               containerInstance nginx
             }
-            deploymentNode "backend-container" "Python 3.11-slim, mock adapters" "Docker Container" {
+            deploymentNode "backend-container" "Python 3.12-slim, mock adapters" "Docker Container" {
               containerInstance api
               containerInstance orchestrator
             }
@@ -237,7 +249,7 @@ workspace "Synapse" "Корпоративная платформа интелл�
       deploymentNode "GPU Dev VM" "64GB RAM, NVIDIA RTX 4090 24GB VRAM" "Ubuntu + NVIDIA Driver" {
         deploymentNode "Docker Engine GPU" "Docker с NVIDIA Container Toolkit" "Docker + CUDA 12.x" {
           deploymentNode "synapse-network" "Внутренняя Docker сеть" "bridge network" {
-            deploymentNode "backend-container" "Python 3.11-slim" "Docker Container" {
+            deploymentNode "backend-container" "Python 3.12-slim" "Docker Container" {
               containerInstance api
               containerInstance orchestrator
               containerInstance ingestion
@@ -259,7 +271,7 @@ workspace "Synapse" "Корпоративная платформа интелл�
             deploymentNode "neo4j-container" "neo4j:5.18-community" "Docker Container" {
               containerInstance neo4j
             }
-            deploymentNode "postgres-container" "postgres:15-alpine" "Docker Container" {
+            deploymentNode "postgres-container" "postgres:16.14-alpine" "Docker Container" {
               containerInstance postgres
             }
             deploymentNode "langfuse-container" "langfuse/langfuse:2" "Docker Container" {

@@ -87,7 +87,7 @@ erDiagram
         uuid        id              PK
         uuid        trace_id        FK
         string      type                 "SPAN|GENERATION"
-        string      name                 "prepare_query|vector_retriever|graph_retriever|merge_results|generator|critic|confidence_score|output_guard|knowledge_gap"
+        string      name                 "prepare_query|query_rewriter|vector_retriever|graph_retriever|merge_results|role_context|generator|critic|confidence_score|output_guard|knowledge_gap"
         timestamp   start_time
         timestamp   end_time
         jsonb       input

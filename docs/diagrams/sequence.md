@@ -7,10 +7,13 @@ sequenceDiagram
     participant NGX as nginx
     participant API as FastAPI (routes.py)
     participant VAL as QueryRequest validator
+    participant QS as QueryService (domain gate)
     participant PQ as prepare_query node
+    participant QRW as query_rewriter node
     participant VR as vector_retriever node
     participant GR as graph_retriever node
     participant MR as merge_results node
+    participant RC as role_context node
     participant EMB as Embedding Service
     participant QD as Qdrant
     participant N4J as Neo4j
@@ -39,18 +42,29 @@ sequenceDiagram
     end
     deactivate VAL
 
-    API->>PQ: run_agent(query, access_level, settings)
+    API->>QS: QueryService.ask(query, access_level)
+    activate QS
+    Note over QS: Доменный security gate — дублирует проверки для\nнеHTTP-вызовов (скрипты, тесты): FR-26 injection + FR-25 PII
+    QS->>PQ: run_agent() → LangGraph ainvoke
+    deactivate QS
     activate PQ
     Note over PQ: preprocessing only — strip + extract_entities()\nНЕ security gate (injection/PII уже обработаны выше)
     PQ->>PQ: extract_entities(query) → entity list
     PQ->>LF: LangGraph callback: span prepare_query
     deactivate PQ
 
+    activate QRW
+    QRW->>LLM: POST /v1/chat/completions — rewrite prompt [sync, max_tokens=80]
+    LLM-->>QRW: query_rewritten (поисковые термины)
+    Note over QRW: «Как проходит онбординг?» →\n«процедура адаптации этапы документы ответственные»
+    QRW->>LF: span: query_rewriter
+    deactivate QRW
+
     Note over VR,GR: Параллельный запуск через LangGraph Send() API (FR-45)
 
     par vector_retriever node
         activate VR
-        VR->>EMB: embed_query(query)
+        VR->>EMB: embed_query(query_rewritten)
         EMB-->>VR: вектор [768]
         VR->>QD: vector search + payload filter(access_level ≤ user_level)
         QD-->>VR: Top-K чанков с scores
@@ -66,12 +80,18 @@ sequenceDiagram
         deactivate GR
     end
 
-    MR->>MR: _merge(): α=0.7 × vector + 0.3 × graph, дедупликация
-    MR-->>GEN: топ-5 источников
+    MR->>MR: _merge(): RRF fusion — alpha/(k+rank_v) + graph_signal/(k+rank_g), дедупликация
+    MR-->>RC: sources (top merged)
+
+    activate RC
+    Note over RC: Детерминированный lookup: access_level → role_hint\nL1=пошаговые инструкции / L3=архитектурные нюансы\nL4=метрики и compliance / L5=полная картина
+    RC-->>GEN: role_hint + sources
+    deactivate RC
 
     loop quality_score < 3.0 AND iterations < agent_max_iterations (3)
 
         activate GEN
+        Note over GEN: system_prompt + role_hint + [DOC-ID: Title] section\ntext × 5 чанков
         GEN->>LLM: generate(context, query) [async]
         LLM-->>GEN: ответ
         GEN->>LF: span: generator
@@ -95,23 +115,9 @@ sequenceDiagram
         CS->>LF: span: confidence_score
 
         alt quality_score < 3.0 AND iterations < 3
-            CS-->>VR: retry: Send(vector_retriever, state)
-            CS-->>GR: retry: Send(graph_retriever, state)
+            CS-->>GEN: generator-only retry: Send(generator, state)
             deactivate CS
-            Note over VR,GR: Повторный параллельный retrieval\n(тот же query и entities — без re-embedding)
-            par retry vector
-                VR->>EMB: embed_query(query)
-                EMB-->>VR: вектор
-                VR->>QD: повторный поиск
-                QD-->>VR: новые чанки
-                VR-->>MR: vector_chunks
-            and retry graph
-                GR->>N4J: повторный traversal
-                N4J-->>GR: новые сущности
-                GR-->>MR: graph_results
-            end
-            MR->>MR: merge
-            MR-->>GEN: новые источники
+            Note over GEN: sources уже в state — re-retrieval пропущен (~1–2 с экономии)\ncritic_feedback → retry_feedback в system_prompt генератора
         end
 
     end
