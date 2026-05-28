@@ -2,7 +2,6 @@ import asyncio
 
 from fastapi.testclient import TestClient
 
-from backend.agents.graph_agent import run_agent
 from backend.api.main import create_app
 from backend.core.config import get_settings
 from backend.query.pipeline import (
@@ -54,27 +53,53 @@ def _make_chunk(doc_id: str, section: str, score: float) -> RetrievedChunk:
 
 
 def test_merge_boosts_vector_chunk_found_in_graph():
+    """RRF: chunk present in both lists scores higher than chunk only in vector."""
     from backend.retrieval.graph_retriever import GraphResult
 
+    # chunk in both vector + graph
     vector_chunks = [_make_chunk("doc1", "intro", 0.8)]
     graph_results = [GraphResult(doc_id="doc1", section_title="intro", summary="...", access_level=1)]
+    merged_both = _merge(vector_chunks, graph_results)
 
-    merged = _merge(vector_chunks, graph_results)
+    # same chunk, vector only (no graph match)
+    merged_vector_only = _merge(vector_chunks, [])
 
-    assert len(merged) == 1
-    assert merged[0].score == round(min(0.8 * 0.7 + 0.3, 1.0), 4)
+    assert len(merged_both) == 1
+    assert merged_both[0].score > merged_vector_only[0].score, (
+        "RRF: graph presence should boost score above vector-only"
+    )
 
 
-def test_merge_adds_graph_only_result_at_030():
+def test_merge_graph_only_result_has_positive_score():
+    """RRF: graph-only result gets a positive score (not a constant 0.3)."""
     from backend.retrieval.graph_retriever import GraphResult
 
     vector_chunks: list[RetrievedChunk] = []
-    graph_results = [GraphResult(doc_id="doc2", section_title="sec", summary="...", access_level=1)]
-
+    graph_results = [
+        GraphResult(doc_id="doc2", section_title="sec", summary="...", access_level=1,
+                    match_count=1, hop_distance=2),
+    ]
     merged = _merge(vector_chunks, graph_results)
 
     assert len(merged) == 1
-    assert merged[0].score == 0.3
+    assert merged[0].score > 0.0
+
+
+def test_merge_higher_match_count_ranks_first():
+    """RRF: graph result with more entity matches ranks above one with fewer."""
+    from backend.retrieval.graph_retriever import GraphResult
+
+    vector_chunks: list[RetrievedChunk] = []
+    graph_results = [
+        GraphResult(doc_id="doc_low",  section_title="s", summary="", access_level=1,
+                    match_count=1, hop_distance=2),
+        GraphResult(doc_id="doc_high", section_title="s", summary="", access_level=1,
+                    match_count=3, hop_distance=1),
+    ]
+    merged = _merge(vector_chunks, graph_results)
+
+    assert len(merged) == 2
+    assert merged[0].doc_id == "doc_high", "Higher match_count should rank first"
 
 
 def test_merge_deduplicates_by_doc_and_section():
@@ -123,8 +148,9 @@ def test_agent_returns_gap_detected_in_mock_mode(monkeypatch):
     monkeypatch.setenv("EMBEDDINGS_BACKEND", "mock")
     get_settings.cache_clear()
 
+    from backend.query.service import QueryService
     result = asyncio.run(
-        run_agent("Как получить доступ к GitLab?", access_level=3, settings=get_settings())
+        QueryService(get_settings()).ask("Как получить доступ к GitLab?", access_level=3)
     )
 
     assert result.gap_detected is True  # no sources → quality_score = 1.0 < 2.0

@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from backend.api.main import create_app
 from backend.core.config import get_settings
 from backend.retrieval.vector_retriever import build_qdrant_rbac_filter
-from backend.security.rbac import ROLES, filter_authorized_items, role_to_access_level
+from backend.security.rbac import ROLES, role_to_access_level
 
 
 def make_client(monkeypatch) -> TestClient:
@@ -57,40 +57,6 @@ def test_knowledge_gaps_endpoint_is_admin_only(monkeypatch):
 
     get_settings.cache_clear()
 
-
-def test_junior_filter_excludes_level_4_and_5_items():
-    items = [
-        {"doc_id": "public", "access_level": 1},
-        {"doc_id": "standard", "access_level": 2},
-        {"doc_id": "manager", "access_level": 4},
-        {"doc_id": "admin", "access_level": 5},
-    ]
-
-    authorized = filter_authorized_items(items, user_access_level=1)
-
-    assert authorized == [{"doc_id": "public", "access_level": 1}]
-
-
-def test_filter_treats_null_access_level_as_public():
-    """NULL access_level → treated as level 1 (public), consistent with Cypher COALESCE."""
-    items = [
-        {"doc_id": "unlabelled"},           # no access_level key at all
-        {"doc_id": "explicit_null", "access_level": None},
-        {"doc_id": "public", "access_level": 1},
-        {"doc_id": "restricted", "access_level": 3},
-    ]
-
-    # Junior (level 1) should see unlabelled, explicit_null, and public — not restricted
-    authorized = filter_authorized_items(items, user_access_level=1)
-    doc_ids = [item["doc_id"] for item in authorized]
-    assert "unlabelled" in doc_ids
-    assert "explicit_null" in doc_ids
-    assert "public" in doc_ids
-    assert "restricted" not in doc_ids
-
-    # Senior (level 3) sees everything
-    all_items = filter_authorized_items(items, user_access_level=3)
-    assert len(all_items) == 4
 
 
 def test_qdrant_rbac_filter_uses_access_level_lte():
