@@ -39,12 +39,12 @@ start-gpu: start-qdrant start-neo4j start-vllm start-api status
 
 .PHONY: start-qdrant
 start-qdrant:
-	@if curl -sf http://localhost:$(QDRANT_PORT)/health > /dev/null 2>&1; then \
+	@if curl -sf http://localhost:$(QDRANT_PORT)/healthz > /dev/null 2>&1; then \
 		echo "  ✅ Qdrant уже запущен"; \
 	elif [ -x "$(QDRANT_BIN)" ] || which qdrant > /dev/null 2>&1; then \
 		echo "▶ Запуск Qdrant..."; \
 		$(QDRANT_BIN) >> $(LOG_QDRANT) 2>&1 & echo $$! > $(PID_QDRANT); \
-		timeout 20 bash -c 'until curl -sf http://localhost:$(QDRANT_PORT)/health > /dev/null 2>&1; do sleep 1; done'; \
+		timeout 20 bash -c 'until curl -sf http://localhost:$(QDRANT_PORT)/healthz > /dev/null 2>&1; do sleep 1; done'; \
 		echo "  ✅ Qdrant запущен (PID $$(cat $(PID_QDRANT)))"; \
 	else \
 		echo "  ⚠️  Qdrant не найден (QDRANT_BIN=$(QDRANT_BIN)) — пропускаем"; \
@@ -76,8 +76,10 @@ start-vllm:
 		echo "  ✅ vLLM уже запущен"; \
 	else \
 		echo "▶ Запуск vLLM ($(VLLM_MODEL))..."; \
+		PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False \
 		$(PYTHON) -m vllm.entrypoints.openai.api_server \
 			--model $(VLLM_MODEL) --port $(VLLM_PORT) \
+			--max-model-len 4096 \
 			>> $(LOG_VLLM) 2>&1 & echo $$! > $(PID_VLLM); \
 		echo "  ✅ vLLM запущен (PID $$(cat $(PID_VLLM)), прогрев ~3 мин)"; \
 	fi
@@ -128,7 +130,7 @@ status:
 	@echo "━━━ Synapse status ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@curl -sf http://localhost:$(API_PORT)/health | python3 -m json.tool 2>/dev/null \
 		|| echo "  ❌ API :$(API_PORT) — недоступен"
-	@curl -sf http://localhost:$(QDRANT_PORT)/health > /dev/null \
+	@curl -sf http://localhost:$(QDRANT_PORT)/healthz > /dev/null \
 		&& echo "  ✅ Qdrant  :$(QDRANT_PORT)" || echo "  ❌ Qdrant  :$(QDRANT_PORT)"
 	@curl -sf http://localhost:7474 > /dev/null \
 		&& echo "  ✅ Neo4j   :7474"  || echo "  ❌ Neo4j   :7474"
