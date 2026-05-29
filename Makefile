@@ -13,6 +13,8 @@ PYTHON   := .venv/bin/python
 UVICORN  := .venv/bin/uvicorn
 API_HOST := 0.0.0.0
 API_PORT := 8000
+# .env: ищем в корне, затем в infra/
+ENV_FILE := $(shell [ -f .env ] && echo .env || echo infra/.env)
 
 # PID-файлы (в /tmp — не требуют прав)
 PID_QDRANT := /tmp/synapse_qdrant.pid
@@ -42,7 +44,8 @@ start-qdrant:
 	elif [ -x "$(QDRANT_BIN)" ] || which qdrant > /dev/null 2>&1; then \
 		echo "▶ Запуск Qdrant..."; \
 		$(QDRANT_BIN) >> $(LOG_QDRANT) 2>&1 & echo $$! > $(PID_QDRANT); \
-		sleep 3; echo "  ✅ Qdrant запущен (PID $$(cat $(PID_QDRANT)))"; \
+		timeout 20 bash -c 'until curl -sf http://localhost:$(QDRANT_PORT)/health > /dev/null 2>&1; do sleep 1; done'; \
+		echo "  ✅ Qdrant запущен (PID $$(cat $(PID_QDRANT)))"; \
 	else \
 		echo "  ⚠️  Qdrant не найден (QDRANT_BIN=$(QDRANT_BIN)) — пропускаем"; \
 	fi
@@ -87,6 +90,7 @@ start-api:
 		echo "  ✅ API уже запущен (PID $$(cat $(PID_API)))"; \
 	else \
 		echo "▶ Запуск Synapse API на :$(API_PORT)..."; \
+		env $$(grep -v '^#' $(ENV_FILE) | xargs) \
 		$(UVICORN) backend.api.main:app \
 			--host $(API_HOST) --port $(API_PORT) \
 			>> $(LOG_API) 2>&1 & \
