@@ -8,6 +8,7 @@ NEO4J_HOME   ?= $(shell echo $$NEO4J_HOME)   # задайте: export NEO4J_HOME
 NEO4J_PORT   ?= 7687
 VLLM_MODEL   ?= Qwen/Qwen2.5-14B-Instruct-AWQ
 VLLM_PORT    ?= 8001
+HF_HOME      ?= $(HOME)/synapse/models
 
 PYTHON   := .venv/bin/python
 UVICORN  := .venv/bin/uvicorn
@@ -76,10 +77,14 @@ start-vllm:
 		echo "  ✅ vLLM уже запущен"; \
 	else \
 		echo "▶ Запуск vLLM ($(VLLM_MODEL))..."; \
-		PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False \
+		PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False HF_HOME=$(HF_HOME) \
 		$(PYTHON) -m vllm.entrypoints.openai.api_server \
-			--model $(VLLM_MODEL) --port $(VLLM_PORT) \
-			--max-model-len 4096 \
+			--model $(VLLM_MODEL) \
+			--host 0.0.0.0 --port $(VLLM_PORT) \
+			--quantization awq \
+			--dtype float16 \
+			--max-model-len 8192 \
+			--gpu-memory-utilization 0.85 \
 			>> $(LOG_VLLM) 2>&1 & echo $$! > $(PID_VLLM); \
 		echo "  ✅ vLLM запущен (PID $$(cat $(PID_VLLM)), прогрев ~3 мин)"; \
 	fi
