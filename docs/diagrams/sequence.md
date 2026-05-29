@@ -3,8 +3,8 @@ sequenceDiagram
     autonumber
 
     actor User as Сотрудник
-    participant UI as React UI
-    participant NGX as nginx
+    participant UI as Synapse UI (Vanilla JS SPA)
+    participant NGX as nginx (опционально)
     participant API as FastAPI (routes.py)
     participant VAL as QueryRequest validator
     participant QS as QueryService (domain gate)
@@ -149,5 +149,5 @@ sequenceDiagram
     end
 
     UI-->>User: Ответ отрисован
-    Note over UI: Streaming не реализован (stream=False)\nПолный ответ одним блоком
+    Note over UI: stream=False — полный JSON одним блоком\nTyping-анимация (слово за словом) на стороне UI
 ```
