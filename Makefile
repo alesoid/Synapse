@@ -1,73 +1,117 @@
-# Synapse — централизованное управление сервисами (нативный запуск, без Docker)
-# Использование:
-#   make start        — запустить все сервисы + API
-#   make stop         — остановить API (сторонние сервисы через stop-services)
-#   make status       — проверить здоровье всех компонентов
-#   make logs         — хвост лога API
-#   make ingest       — проиндексировать корпус
-#   make test         — запустить тесты
+# Synapse — полный запуск без sudo и прав администратора
+# Все сервисы запускаются как пользовательские процессы.
+#
+# Настройте пути под ваш сервер:
+QDRANT_BIN   ?= $(shell which qdrant 2>/dev/null || echo qdrant)
+QDRANT_PORT  ?= 6333
+NEO4J_HOME   ?= $(shell echo $$NEO4J_HOME)   # задайте: export NEO4J_HOME=/opt/neo4j
+NEO4J_PORT   ?= 7687
+VLLM_MODEL   ?= Qwen/Qwen2.5-14B-Instruct-AWQ
+VLLM_PORT    ?= 8001
 
-PYTHON      := .venv/bin/python
-UVICORN     := .venv/bin/uvicorn
-API_HOST    := 0.0.0.0
-API_PORT    := 8000
-API_PID     := /tmp/synapse_api.pid
-API_LOG     := /tmp/synapse_api.log
+PYTHON   := .venv/bin/python
+UVICORN  := .venv/bin/uvicorn
+API_HOST := 0.0.0.0
+API_PORT := 8000
 
-# ── Запуск ────────────────────────────────────────────────────────────────────
+# PID-файлы (в /tmp — не требуют прав)
+PID_QDRANT := /tmp/synapse_qdrant.pid
+PID_NEO4J  := /tmp/synapse_neo4j.pid
+PID_VLLM   := /tmp/synapse_vllm.pid
+PID_API    := /tmp/synapse_api.pid
+
+LOG_QDRANT := /tmp/synapse_qdrant.log
+LOG_NEO4J  := /tmp/synapse_neo4j.log
+LOG_VLLM   := /tmp/synapse_vllm.log
+LOG_API    := /tmp/synapse_api.log
+
+# ── Запуск всех сервисов ───────────────────────────────────────────────────────
 
 .PHONY: start
-start: start-services wait-services start-api status
+start: start-qdrant start-neo4j start-api status
 
-.PHONY: start-services
-start-services:
-	@echo "▶ Запуск Qdrant..."
-	@sudo systemctl start qdrant 2>/dev/null || echo "  [skip] qdrant не systemd-сервис"
-	@echo "▶ Запуск Neo4j..."
-	@sudo systemctl start neo4j 2>/dev/null || echo "  [skip] neo4j не systemd-сервис"
-	@echo "▶ Запуск vLLM (если настроен)..."
-	@sudo systemctl start vllm 2>/dev/null || true
+.PHONY: start-gpu   # с vLLM
+start-gpu: start-qdrant start-neo4j start-vllm start-api status
 
-.PHONY: wait-services
-wait-services:
-	@echo "⏳ Ожидание готовности сервисов..."
-	@timeout 30 bash -c 'until curl -sf http://localhost:6333/health > /dev/null 2>&1; do sleep 1; done' \
-		&& echo "  ✅ Qdrant ready" || echo "  ⚠️  Qdrant недоступен — продолжаем"
-	@timeout 15 bash -c 'until curl -sf http://localhost:7474 > /dev/null 2>&1; do sleep 1; done' \
-		&& echo "  ✅ Neo4j ready" || echo "  ⚠️  Neo4j недоступен — продолжаем"
+# ── Qdrant ────────────────────────────────────────────────────────────────────
+
+.PHONY: start-qdrant
+start-qdrant:
+	@if curl -sf http://localhost:$(QDRANT_PORT)/health > /dev/null 2>&1; then \
+		echo "  ✅ Qdrant уже запущен"; \
+	elif [ -x "$(QDRANT_BIN)" ] || which qdrant > /dev/null 2>&1; then \
+		echo "▶ Запуск Qdrant..."; \
+		$(QDRANT_BIN) >> $(LOG_QDRANT) 2>&1 & echo $$! > $(PID_QDRANT); \
+		sleep 3; echo "  ✅ Qdrant запущен (PID $$(cat $(PID_QDRANT)))"; \
+	else \
+		echo "  ⚠️  Qdrant не найден (QDRANT_BIN=$(QDRANT_BIN)) — пропускаем"; \
+	fi
+
+# ── Neo4j ─────────────────────────────────────────────────────────────────────
+
+.PHONY: start-neo4j
+start-neo4j:
+	@if curl -sf http://localhost:7474 > /dev/null 2>&1; then \
+		echo "  ✅ Neo4j уже запущен"; \
+	elif [ -n "$(NEO4J_HOME)" ] && [ -x "$(NEO4J_HOME)/bin/neo4j" ]; then \
+		echo "▶ Запуск Neo4j..."; \
+		$(NEO4J_HOME)/bin/neo4j start >> $(LOG_NEO4J) 2>&1; \
+		sleep 5; echo "  ✅ Neo4j запущен"; \
+	elif which neo4j > /dev/null 2>&1; then \
+		echo "▶ Запуск Neo4j..."; \
+		neo4j start >> $(LOG_NEO4J) 2>&1; \
+		sleep 5; echo "  ✅ Neo4j запущен"; \
+	else \
+		echo "  ⚠️  Neo4j не найден (задайте NEO4J_HOME) — пропускаем"; \
+	fi
+
+# ── vLLM (GPU-режим) ──────────────────────────────────────────────────────────
+
+.PHONY: start-vllm
+start-vllm:
+	@if curl -sf http://localhost:$(VLLM_PORT)/health > /dev/null 2>&1; then \
+		echo "  ✅ vLLM уже запущен"; \
+	else \
+		echo "▶ Запуск vLLM ($(VLLM_MODEL))..."; \
+		$(PYTHON) -m vllm.entrypoints.openai.api_server \
+			--model $(VLLM_MODEL) --port $(VLLM_PORT) \
+			>> $(LOG_VLLM) 2>&1 & echo $$! > $(PID_VLLM); \
+		echo "  ✅ vLLM запущен (PID $$(cat $(PID_VLLM)), прогрев ~3 мин)"; \
+	fi
+
+# ── Synapse API ───────────────────────────────────────────────────────────────
 
 .PHONY: start-api
 start-api:
-	@if [ -f $(API_PID) ] && kill -0 $$(cat $(API_PID)) 2>/dev/null; then \
-		echo "  ℹ️  API уже запущен (PID $$(cat $(API_PID)))"; \
+	@if [ -f $(PID_API) ] && kill -0 $$(cat $(PID_API)) 2>/dev/null; then \
+		echo "  ✅ API уже запущен (PID $$(cat $(PID_API)))"; \
 	else \
 		echo "▶ Запуск Synapse API на :$(API_PORT)..."; \
 		$(UVICORN) backend.api.main:app \
 			--host $(API_HOST) --port $(API_PORT) \
-			>> $(API_LOG) 2>&1 & \
-		echo $$! > $(API_PID); \
+			>> $(LOG_API) 2>&1 & \
+		echo $$! > $(PID_API); \
 		sleep 3; \
-		echo "  ✅ API запущен (PID $$(cat $(API_PID)))"; \
+		echo "  ✅ API запущен (PID $$(cat $(PID_API)))"; \
 	fi
 
 # ── Остановка ─────────────────────────────────────────────────────────────────
 
 .PHONY: stop
 stop:
-	@if [ -f $(API_PID) ]; then \
-		echo "■ Остановка API (PID $$(cat $(API_PID)))..."; \
-		kill $$(cat $(API_PID)) 2>/dev/null && rm $(API_PID); \
-		echo "  ✅ Остановлен"; \
-	else \
-		echo "  ℹ️  API не запущен"; \
-	fi
+	@$(MAKE) _kill PID=$(PID_API)   NAME=API
+	@$(MAKE) _kill PID=$(PID_VLLM)  NAME=vLLM
+	@$(MAKE) _kill PID=$(PID_QDRANT) NAME=Qdrant
+	@if which neo4j > /dev/null 2>&1; then neo4j stop 2>/dev/null || true; fi
+	@if [ -n "$(NEO4J_HOME)" ] && [ -x "$(NEO4J_HOME)/bin/neo4j" ]; then \
+		$(NEO4J_HOME)/bin/neo4j stop 2>/dev/null || true; fi
 
-.PHONY: stop-services
-stop-services: stop
-	@sudo systemctl stop qdrant 2>/dev/null || true
-	@sudo systemctl stop neo4j  2>/dev/null || true
-	@sudo systemctl stop vllm   2>/dev/null || true
-	@echo "■ Сервисы остановлены"
+.PHONY: _kill
+_kill:
+	@if [ -f $(PID) ] && kill -0 $$(cat $(PID)) 2>/dev/null; then \
+		kill $$(cat $(PID)) && rm -f $(PID); \
+		echo "  ■ $(NAME) остановлен"; \
+	fi
 
 .PHONY: restart
 restart: stop start
@@ -79,24 +123,25 @@ status:
 	@echo ""
 	@echo "━━━ Synapse status ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@curl -sf http://localhost:$(API_PORT)/health | python3 -m json.tool 2>/dev/null \
-		|| echo "  ❌ API http://localhost:$(API_PORT) — недоступен"
-	@echo ""
-	@curl -sf http://localhost:6333/health > /dev/null \
-		&& echo "  ✅ Qdrant   :6333" || echo "  ❌ Qdrant   :6333 — недоступен"
+		|| echo "  ❌ API :$(API_PORT) — недоступен"
+	@curl -sf http://localhost:$(QDRANT_PORT)/health > /dev/null \
+		&& echo "  ✅ Qdrant  :$(QDRANT_PORT)" || echo "  ❌ Qdrant  :$(QDRANT_PORT)"
 	@curl -sf http://localhost:7474 > /dev/null \
-		&& echo "  ✅ Neo4j    :7474" || echo "  ❌ Neo4j    :7474 — недоступен"
-	@curl -sf http://localhost:8001/health > /dev/null \
-		&& echo "  ✅ vLLM     :8001" || echo "  –  vLLM     :8001 — не используется (mock)"
+		&& echo "  ✅ Neo4j   :7474"  || echo "  ❌ Neo4j   :7474"
+	@curl -sf http://localhost:$(VLLM_PORT)/health > /dev/null \
+		&& echo "  ✅ vLLM    :$(VLLM_PORT)" || echo "  –  vLLM    :$(VLLM_PORT) (mock)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
 
-# ── Логи ──────────────────────────────────────────────────────────────────────
+# ── Утилиты ───────────────────────────────────────────────────────────────────
 
 .PHONY: logs
 logs:
-	@tail -f $(API_LOG)
+	@tail -f $(LOG_API)
 
-# ── Индексация ────────────────────────────────────────────────────────────────
+.PHONY: logs-all
+logs-all:
+	@tail -f $(LOG_API) $(LOG_QDRANT) $(LOG_NEO4J) $(LOG_VLLM) 2>/dev/null
 
 .PHONY: ingest
 ingest:
@@ -105,7 +150,11 @@ ingest:
 		-H "X-User-Role: admin" \
 		-H "Content-Type: application/json" | python3 -m json.tool
 
-# ── Разработка ────────────────────────────────────────────────────────────────
+.PHONY: update
+update:
+	@git pull
+	@pip install -e . -q
+	@$(MAKE) restart
 
 .PHONY: test
 test:
@@ -114,9 +163,3 @@ test:
 .PHONY: install
 install:
 	@pip install -e ".[dev]"
-
-.PHONY: update
-update:
-	@git pull
-	@pip install -e .
-	@$(MAKE) restart
