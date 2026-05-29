@@ -1,7 +1,7 @@
-# ADR-011: Frontend — React + TypeScript + react-force-graph
+# ADR-011: Frontend — Vanilla JS SPA (Tailwind CSS)
 
-**Статус:** Принято  
-**Дата:** 11 мая 2026  
+**Статус:** Принято (обновлено)  
+**Дата:** 11 мая 2026 → 29 мая 2026  
 **Автор:** Алеся Мороз
 
 ---
@@ -10,8 +10,8 @@
 
 | Этап | Что реализовано | Статус |
 |---|---|---|
-| **MVP** | React + TypeScript + Tailwind, react-force-graph для Explorer, Q&A чат-интерфейс | ✅ Текущее решение |
-| **Scale** | Mobile App (React Native), Slack/Teams bot как дополнительные каналы; React UI остаётся основным веб-каналом | 🔜 Вне скоупа MVP |
+| **MVP** | Vanilla JS SPA + Tailwind CSS CDN, смонтирован FastAPI на `/ui`; Explorer как таблицы узлов/рёбер + ссылка на Neo4j Browser | ✅ Реализовано (`frontend/index.html`) |
+| **Scale** | React + TypeScript + react-force-graph; Mobile App; Slack/Teams bot | 🔜 Вне скоупа MVP |
 
 ---
 
@@ -19,33 +19,35 @@
 
 Synapse требует веб-интерфейс для двух режимов: Q&A чат (все роли) и Explorer визуализация графа знаний (только Admin). Ключевые требования:
 
-- Streaming-отображение ответов (токены появляются по мере генерации)
-- Интерактивная визуализация графа: узлы, рёбра, клик для просмотра деталей (FR-07, FR-08)
+- Отображение ответов с анимацией (типографический эффект — слово за словом)
+- Explorer: таблица узлов/рёбер + ссылка на Neo4j Browser для полной визуализации (FR-07)
 - Смена роли пользователя для демо (dropdown без JWT)
-- Компонентный подход для поддерживаемости
+- Быстрый старт без сборочного инструмента
 
 ---
 
 ## Решение
 
-**React 18 + TypeScript + Tailwind CSS** для UI, **react-force-graph** для визуализации графа в Explorer режиме.
+**Vanilla JS + Tailwind CSS CDN** — статический `frontend/index.html`, смонтирован FastAPI-роутом `/ui`. Никакого сборщика (Vite/Webpack) — файл открывается напрямую.
 
-```typescript
-// Streaming Q&A
-const response = await fetch('/query', { method: 'POST', body: ... });
-const reader = response.body?.getReader();
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-  setAnswer(prev => prev + decode(value));
+```javascript
+// Q&A с typing-анимацией (слово за словом)
+function typeText(el, text, speed = 20) {
+    el.textContent = '';
+    const words = text.split(' ');
+    let i = 0;
+    const timer = setInterval(() => {
+        if (i < words.length) {
+            el.textContent += (i > 0 ? ' ' : '') + words[i++];
+        } else clearInterval(timer);
+    }, speed);
 }
 
-// Explorer граф
-<ForceGraph2D
-  graphData={{ nodes, links }}
-  onNodeClick={(node) => fetchNodeDetails(node.id)}
-  nodeLabel="name"
-/>
+// Explorer граф — таблица из GET /graph
+const { nodes, edges } = await (await fetch('/graph', {
+    headers: { 'X-User-Role': 'admin' }
+})).json();
+renderTable(nodes, edges); // HTML-таблица
 ```
 
 ---
@@ -65,25 +67,31 @@ while (true) {
 
 ## Trade-offs
 
-**Плюсы React + react-force-graph:**
-- React — de facto стандарт для корпоративных веб-приложений, богатая экосистема
-- TypeScript — типизация предотвращает ошибки при работе с API-ответами (AgentState, GraphData)
-- Tailwind — быстрая стилизация без написания CSS с нуля
-- react-force-graph — обёртка над D3 force simulation: интерактивность (zoom, drag, click) из коробки, 2D и 3D режимы
+**Плюсы Vanilla JS SPA:**
+- Нулевые зависимости сборки — `index.html` открывается без npm/vite/webpack
+- Tailwind CDN — стилизация без конфигурации
+- Быстро итерировать: правки видны после F5, не нужен hot reload
+- Нет transpile-шага — меньше точек отказа на demo-окружении
 
 **Минусы:**
-- React + TypeScript — выше порог входа по сравнению с Vue или Streamlit
-- react-force-graph плохо масштабируется на больших графах (>1000 узлов) — для MVP (50-100 узлов) достаточно
-- Tailwind генерирует большой CSS bundle без purge (настраивается в build)
+- Нет TypeScript — ошибки типов только в runtime
+- Нет интерактивной force-graph визуализации (таблицы вместо D3-графа)
+- Компонентный подход сложнее без фреймворка при росте кодовой базы
+
+**Почему не React в MVP:**
+- React требует сборочного окружения (Node.js, npm, Vite) — лишний источник проблем на gpu-demo
+- react-force-graph — Should Have по FR-08, а не Must Have
 
 ---
 
 ## Последствия
 
-- Frontend запускается на порту 3000 в Docker Compose
+- Frontend смонтирован FastAPI на `/ui` — не отдельный порт
 - Dropdown смены роли передаёт `X-User-Role` заголовок при каждом запросе
 - Explorer режим отображается только при `role === 'admin'` — проверка на фронте и на бэке (FR-09)
-- `react-force-graph` получает данные из `GET /graph` — только узлы и рёбра доступные Admin (access_level=5)
+- `GET /graph` возвращает nodes/edges в JSON → рендерится HTML-таблицей
+- Ссылка на Neo4j Browser (`http://localhost:7474`) доступна из Explorer для Admin (FR-07)
+- Scale-этап: заменить на React + TypeScript + react-force-graph
 
 ---
 
