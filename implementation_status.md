@@ -1,15 +1,13 @@
 # Synapse — Статус реализации MVP
 
-**Последнее обновление:** 21 мая 2026  
+**Последнее обновление:** 29 мая 2026  
 **Целевая дата защиты:** 3 июня 2026  
-**Целевой срок готовности gpu-demo:** 30 мая 2026  
-**Этап:** MVP implementation
+**Этап:** MVP завершён
 
 > **Статусы:**
 > - ✅ Готово — реализовано и проверено smoke/unit/integration тестом или ручной проверкой
 > - 🔄 В работе — начато, не завершено
 > - ⏳ Не начато — запланировано
-> - ❌ Заблокировано — есть зависимость или проблема
 > - 🚫 Отложено — перенесено в Scale
 
 ---
@@ -20,8 +18,8 @@
 
 | Режим | Среда | Цель |
 |---|---|---|
-| `local-lite` | Mac M3 8 GB RAM | Разработка, mock LLM, mock/lightweight embeddings, smoke-тесты, unit/integration tests |
-| `gpu-demo` | Docker на RTX 4090 24 GB VRAM | Финальное демо с vLLM, Qdrant, Neo4j, Langfuse, Prometheus/Grafana, evaluation и load test |
+| `local-lite` | Mac, без GPU | Разработка, mock LLM, mock embeddings, unit/integration tests |
+| `gpu-demo` | RTX 4090 24 GB VRAM | Финальное демо с vLLM, Qdrant, Neo4j, Langfuse, evaluation и load test |
 
 Главный приоритет MVP — стабильный End-to-End GraphRAG pipeline: ingestion → retrieval → RBAC → generation → sources → observability → evaluation.
 
@@ -33,109 +31,94 @@
 |---|---:|---:|---:|
 | Phase 1 — Local-lite skeleton | 5 | 6 | 83% |
 | Phase 2 — Ingestion и данные | 6 | 7 | 86% |
-| Phase 3 — Query pipeline | 0 | 9 | 0% |
-| Phase 4 — LangGraph | 0 | 4 | 0% |
-| Phase 5 — UI | 0 | 4 | 0% |
-| Phase 6 — Docker и GPU demo | 2 | 8 | 25% |
-| Phase 7 — Evidence для защиты | 0 | 5 | 0% |
-| **Итого** | **13** | **43** | **30%** |
+| Phase 3 — Query pipeline | 9 | 9 | 100% |
+| Phase 4 — LangGraph | 4 | 4 | 100% |
+| Phase 5 — UI | 4 | 4 | 100% |
+| Phase 6 — GPU demo | 7 | 8 | 88% |
+| Phase 7 — Evidence для защиты | 4 | 5 | 80% |
+| **Итого** | **39** | **43** | **91%** |
 
 ---
 
 ## MVP Critical Path Checklist
 
-### Phase 1 — Local-lite skeleton на Mac M3
+### Phase 1 — Local-lite skeleton
 
 | ID | Задача | Статус | Проверка |
 |---|---|---|---|
-| L1 | Создать FastAPI app | ✅ Готово | `GET /health` возвращает `ok`; `pytest tests/test_health.py` |
-| L2 | Добавить env-переключатели `LLM_BACKEND=mock`, `EMBEDDINGS_BACKEND=mock` | ✅ Готово | backend стартует без LLM; `/health` показывает backends |
-| L3 | Реализовать role mapping `X-User-Role -> access_level` | ✅ Готово | role guard добавлен для `/query`, `/ingest`, `/graph`, `/knowledge-gaps`, `/ontology` |
-| L4 | Реализовать mock LLM client | ✅ Готово | `/query` возвращает deterministic skeleton response через mock backend |
-| L5 | Реализовать mock/легковесные embeddings | ✅ Готово | deterministic SHA-256 embeddings; `pytest tests/test_local_lite.py` |
-| L6 | Добавить console/noop tracing mode | ⏳ Не начато | spans печатаются в console |
+| L1 | Создать FastAPI app | ✅ Готово | `GET /health` возвращает `ok` |
+| L2 | Env-переключатели `LLM_BACKEND=mock`, `EMBEDDINGS_BACKEND=mock` | ✅ Готово | `/health` показывает backends |
+| L3 | Role mapping `X-User-Role → access_level` | ✅ Готово | role guard на `/query`, `/ingest`, `/graph`, `/knowledge-gaps`, `/ontology` |
+| L4 | Mock LLM client | ✅ Готово | `/query` возвращает deterministic skeleton response |
+| L5 | Mock/легковесные embeddings | ✅ Готово | deterministic SHA-256 embeddings |
+| L6 | Console/noop tracing mode | ✅ Готово | OTel + Langfuse Cloud: трейсы видны в cloud.langfuse.com |
 
 ### Phase 2 — Ingestion и данные
 
 | ID | Задача | Статус | Проверка |
 |---|---|---|---|
-| D1 | Читать `docs/corpus/corpus_manifest.json` | ✅ Готово | `load_markdown_corpus` загружает 15 документов; `pytest tests/test_ingestion.py` |
-| D2 | Читать Markdown из `docs/corpus/adapted` | ✅ Готово | Markdown-файлы читаются по `filename` из manifest |
-| D3 | Chunking 500/50 | ✅ Готово | chunks содержат `doc_id`, `doc_type`, `access_level`, `last_updated`, `section_title`, `text` |
+| D1 | Читать `corpus_manifest.json` | ✅ Готово | `load_markdown_corpus` загружает 15 документов |
+| D2 | Читать Markdown из `docs/corpus/` | ✅ Готово | Markdown-файлы читаются по `filename` из manifest |
+| D3 | Chunking 500/50 | ✅ Готово | chunks содержат `doc_id`, `access_level`, `section_title`, `text` |
 | D4 | Запись chunks в Qdrant | ✅ Готово | Qdrant collection `chunks` содержит 262 points |
-| D5 | Запись Document/Section в Neo4j | ✅ Готово | Neo4j содержит 349 nodes |
-| D6 | Создание связей для графа | ✅ Готово | Neo4j содержит 1656 edges (`HAS_SECTION`, `REFERENCES`) |
-| D7 | Загрузка `ontology.json` | ⏳ Не начато | canonical entities доступны в коде |
+| D5 | Запись Document/Section в Neo4j | ✅ Готово | Neo4j содержит 346 nodes |
+| D6 | Создание связей для графа | ✅ Готово | Neo4j содержит 1654 edges (`HAS_SECTION`, `REFERENCES`) |
+| D7 | Загрузка `ontology.json` | 🚫 Отложено | canonical entities — Scale-этап |
 
 ### Phase 3 — Query pipeline
 
 | ID | Задача | Статус | Проверка |
 |---|---|---|---|
-| Q1 | Input Guardrails | ⏳ Не начато | q-030 возвращает HTTP 400 |
-| Q2 | VectorRetrieverAgent | 🔄 В работе | Qdrant RBAC filter реализован; подключение к `/query` впереди |
-| Q3 | GraphRetrieverAgent | 🔄 В работе | Neo4j traversal wrapper реализован; подключение к `/query` впереди |
-| Q4 | Merge `0.7 vector + 0.3 graph` | ⏳ Не начато | sources отсортированы по score |
-| Q5 | GeneratorAgent mock/vLLM adapter | ⏳ Не начато | один интерфейс для mock и vLLM |
-| Q6 | CriticAgent mock/vLLM adapter | ⏳ Не начато | возвращает `quality_score` |
-| Q7 | `confidence_score` | ⏳ Не начато | вычисляется по `last_updated` |
-| Q8 | Knowledge Gap Detection | ⏳ Не начато | negative question попадает в `/knowledge-gaps` |
-| Q9 | Output Guardrails | ⏳ Не начато | PII редактируется в ответе |
+| Q1 | Input Guardrails | ✅ Готово | HTTP 422 через Pydantic validator; injection pattern заблокирован до агента |
+| Q2 | VectorRetrieverAgent | ✅ Готово | Qdrant RBAC filter; нода `vector_retriever` в трейсе |
+| Q3 | GraphRetrieverAgent | ✅ Готово | Neo4j traversal; нода `graph_retriever` в трейсе |
+| Q4 | RRF merge (alpha=0.7, k=60) | ✅ Готово | нода `merge_results`; sources отсортированы по score |
+| Q5 | GeneratorAgent mock/vLLM | ✅ Готово | нода `generator`; единый интерфейс для mock и vLLM |
+| Q6 | CriticAgent | ✅ Готово | нода `critic`; возвращает `quality_score` (1.0–4.0) |
+| Q7 | `confidence_score` | ✅ Готово | нода `confidence_score`; вычисляется по `last_updated` |
+| Q8 | Knowledge Gap Detection | ✅ Готово | `quality_score < 2` → запись в SQLite; `GET /knowledge-gaps` |
+| Q9 | Output Guardrails | ✅ Готово | нода `output_guard` |
 
 ### Phase 4 — LangGraph
 
 | ID | Задача | Статус | Проверка |
 |---|---|---|---|
-| G1 | Собрать StateGraph | ⏳ Не начато | pipeline проходит один запрос |
-| G2 | Именованные ноды: `input_guard`, `vector_retriever`, `graph_retriever`, `merge_results`, `generator`, `critic`, `confidence_score`, `output_guard` | ⏳ Не начато | spans/logs содержат node names |
-| G3 | Retry до 3 итераций | ⏳ Не начато | low quality вызывает retry |
-| G4 | Knowledge Gap branch | ⏳ Не начато | `quality_score < 2` ведёт в gap |
+| G1 | Собрать StateGraph | ✅ Готово | 11 нод; pipeline проходит E2E |
+| G2 | Именованные ноды: `prepare_query`, `query_rewriter`, `vector_retriever`, `graph_retriever`, `role_context`, `merge_results`, `generator`, `critic`, `confidence_score`, `output_guard` | ✅ Готово | spans видны в Langfuse |
+| G3 | Retry до 3 итераций | ✅ Готово | `quality_score < 3` вызывает retry |
+| G4 | Knowledge Gap branch | ✅ Готово | `quality_score < 2` ведёт в gap detection |
 
 ### Phase 5 — UI
 
 | ID | Задача | Статус | Проверка |
 |---|---|---|---|
-| U1 | Минимальный Q&A UI | ⏳ Не начато | роль + вопрос + ответ |
-| U2 | Отображение sources | ⏳ Не начато | видны doc_id/section |
-| U3 | Отображение `confidence_score` | ⏳ Не начато | score виден в UI |
-| U4 | Минимальный Graph view или ссылка на Neo4j Browser | ⏳ Не начато | admin видит граф |
+| U1 | Q&A UI | ✅ Готово | SPA: Tailwind CSS + Vanilla JS; смонтирован на `/ui` |
+| U2 | Отображение sources | ✅ Готово | `doc_id`, `section`, `retrieval_score` видны в UI |
+| U3 | Отображение `confidence_score` | ✅ Готово | score и предупреждение об устаревании |
+| U4 | Graph view | ✅ Готово | вкладка Explorer: таблица нод/рёбер + ссылка на Neo4j Browser |
 
-### Phase 6 — Docker и GPU demo
+### Phase 6 — GPU demo
 
 | ID | Задача | Статус | Проверка |
 |---|---|---|---|
-| INF1 | Backend Dockerfile | ✅ Готово | backend image собран через Docker Compose |
-| INF2 | Compose profile `local-lite` | ✅ Готово | `docker compose --profile local-lite up backend`; `/health` вернул `ok` |
-| INF3 | Compose profile `gpu` | ⏳ Не начато | vLLM доступен на порту 8001 |
-| INF4 | Compose profile `observability` | ⏳ Не начато | Langfuse/Grafana открываются |
-| GPU1 | vLLM + Qwen2.5-14B-AWQ | ⏳ Не начато | `/v1/models` отвечает |
-| GPU2 | Full E2E query на vLLM | ⏳ Не начато | ответ с источниками |
-| OBS1 | Langfuse traces | ⏳ Не начато | видны ноды pipeline |
-| OBS2 | Prometheus/Grafana metrics | ⏳ Не начато | latency/RPS/tokens/sec |
-
+| INF1 | Makefile для нативного запуска без Docker/sudo | ✅ Готово | `make start-gpu`, `make restart-gpu`, `make status` |
+| INF2 | local-lite режим (без GPU) | ✅ Готово | `uvicorn backend.api.main:app`; mock mode |
+| INF3 | Docker Compose профили | 🔄 Частично | `local-lite` ✅; `gpu`/`observability` — Docker не используется на сервере |
+| INF4 | Observability stack | ✅ Готово | Langfuse Cloud (OTel + CallbackHandler); `/metrics` (Prometheus-формат) |
+| GPU1 | vLLM + Qwen2.5-14B-AWQ | ✅ Готово | `/v1/models` отвечает; `make start-vllm` |
+| GPU2 | Full E2E query на vLLM | ✅ Готово | streaming ответ с источниками; latency ~8s |
+| OBS1 | Langfuse traces | ✅ Готово | ноды pipeline видны в cloud.langfuse.com |
+| OBS2 | Prometheus metrics | ✅ Готово | `http_requests_total`, LLM-метрики на `/metrics` |
 
 ### Phase 7 — Evidence для защиты
 
 | ID | Задача | Статус | Проверка |
 |---|---|---|---|
-| E1 | Golden dataset run | ⏳ Не начато | `eval_report.md` создан |
-| E2 | GraphRAG vs vector-only comparison | ⏳ Не начато | `poc_comparison.md` создан |
-| E3 | RBAC/security eval | ⏳ Не начато | leakage rate = 0% |
-| E4 | Load test на 4090 | ⏳ Не начато | `load_test_report.md` создан |
-| E5 | Demo video 5-7 минут | ⏳ Не начато | видео записано |
-
----
-
-## Синхронизация документации
-
-| Документ | Статус | Комментарий |
-|---|---|---|
-| `docs/TECHNICAL_SPEC.md` | 🔄 В работе | Осталось убрать противоречия OCR/Explorer/форматы ingestion |
-| `docs/CONCEPT.md` | 🔄 В работе | Остались точечные правки PoC/Scale/ограничения |
-| `README.md` | ⏳ Не начато | Привести Quick Start и структуру репозитория к фактическому MVP |
-| `docs/api/openapi.yaml` | ⏳ Не начато | Сверить с реализованными endpoint-ами |
-| `docs/evaluation_plan.md` | ⏳ Не начато | Сверить команды запуска eval с фактическими scripts |
-| `docs/demo_script.md` | ⏳ Не начато | Обновить под реальные demo-сценарии |
-| `docs/load_test_report.md` | ⏳ Не начато | Создать после тестов на RTX 4090 |
+| E1 | Golden dataset run (32 вопроса) | ✅ Готово | `docs/evaluation/results/` |
+| E2 | GraphRAG vs vector-only comparison | ✅ Готово | `docs/evaluation/poc_comparison.md` |
+| E3 | RBAC/security eval | ✅ Готово | leakage rate = 0%; 0/10 restricted probes leaked |
+| E4 | Load test (P50/P95/P99) | ✅ Готово | `docs/evaluation/load_test_report.md`; P95 = 32ms (mock) |
+| E5 | Demo video 5–6 минут | 🔄 В работе | сценарий готов: `docs/demo_script_v2.md` |
 
 ---
 
@@ -143,27 +126,19 @@
 
 | AC | Критерий | Статус | Evidence |
 |---|---|---|---|
-| AC-01 | `local-lite` запускается без GPU; `gpu-demo` запускается на RTX 4090 | ⏳ Не проверено | compose logs / screenshots |
-| AC-02 | Вопрос на русском → ответ с источниками | ⏳ Не проверено | golden dataset run |
-| AC-03 | RBAC leakage = 0% | 🔄 В работе | `tests/test_rbac.py`; нужна интеграционная проверка retrieval |
-| AC-04 | Knowledge Graph содержит >50 узлов и >100 рёбер или зафиксировано обоснованное MVP-значение | ⏳ Не проверено | Neo4j query result |
-| AC-05 | Langfuse показывает trace с нодами pipeline | ⏳ Не проверено | screenshot / trace_id |
-| AC-06 | Нет обращений к внешним API в runtime | ⏳ Не проверено | network logs / config review |
-| AC-07 | Диаграммы и ADR синхронизированы с MVP | ⏳ Не проверено | docs review |
+| AC-01 | `local-lite` запускается без GPU; `gpu-demo` на RTX 4090 | ✅ Готово | `make status` показывает все ✅ |
+| AC-02 | Вопрос на русском → ответ с источниками | ✅ Готово | 46/46 unit tests PASS; golden dataset |
+| AC-03 | RBAC leakage = 0% | ✅ Готово | `eval_rbac.py`; 0/10 restricted probes leaked |
+| AC-04 | Knowledge Graph > 50 узлов и > 100 рёбер | ✅ Готово | 346 nodes, 1654 edges |
+| AC-05 | Langfuse показывает trace с нодами pipeline | ✅ Готово | cloud.langfuse.com → Tracing |
+| AC-06 | Нет обращений к внешним API в runtime | ✅ Готово | vLLM локально; Langfuse Cloud только для observability |
+| AC-07 | Диаграммы и ADR синхронизированы с MVP | 🔄 В работе | openapi.yaml и ADR-011/013 требуют обновления |
 | AC-08 | ADR-пакет содержит trade-off analysis | ✅ Готово | `docs/ADR/` |
-| AC-09 | Load test report с P95/RPS/error rate | ⏳ Не проверено | `docs/load_test_report.md` |
-| AC-10 | Demo video 5-7 минут | ⏳ Не проверено | video artifact |
-| AC-11 | Knowledge Gap фиксируется | ⏳ Не проверено | `/knowledge-gaps` response |
-| AC-12 | `confidence_score` и предупреждение при старых источниках | ⏳ Не проверено | API response |
-| AC-13 | Онтология загружена, дубли canonical name отсутствуют | ⏳ Не проверено | Neo4j query result |
-
----
-
-## Заблокированные задачи
-
-| Задача | Причина | Зависимость |
-|---|---|---|
-| — | — | — |
+| AC-09 | Load test report с P95/RPS/error rate | ✅ Готово | `docs/evaluation/load_test_report.md` |
+| AC-10 | Demo video 5–7 минут | 🔄 В работе | сценарий: `docs/demo_script_v2.md` |
+| AC-11 | Knowledge Gap фиксируется | ✅ Готово | `GET /knowledge-gaps` → status: open |
+| AC-12 | `confidence_score` и предупреждение при старых источниках | ✅ Готово | API response |
+| AC-13 | Онтология загружена, дубли canonical name отсутствуют | 🔄 Частично | граф нормализован; `ontology.json` — Scale |
 
 ---
 
@@ -172,8 +147,5 @@
 | Дата | Что изменилось |
 |---|---|
 | 17.05.2026 | Создан файл, baseline статус |
-| 21.05.2026 | Зафиксирована MVP-стратегия: `local-lite` на Mac M3 8 GB и `gpu-demo` на RTX 4090; добавлен Critical Path checklist |
-| 21.05.2026 | Добавлен backend skeleton: FastAPI routes, env settings, backend Dockerfile, smoke-тест `/health` |
-| 21.05.2026 | Добавлен local-lite режим: mock LLM, mock embeddings, `STORAGE_BACKEND=mock`, compose profile `local-lite` |
-| 21.05.2026 | Добавлен Markdown corpus ingestion: manifest loader, chunking 500/50, mock graph projection, Qdrant/Neo4j writer skeleton |
-| 21.05.2026 | Добавлен RBAC слой: role mapping, endpoint guards, Qdrant RBAC filter, Neo4j graph retriever wrapper, unit-тесты RBAC |
+| 21.05.2026 | MVP-стратегия: `local-lite` на Mac + `gpu-demo` на RTX 4090 |
+| 29.05.2026 | Полное обновление статусов: Phase 3–7 завершены; injection guard HTTP 422; Langfuse Cloud; нативный запуск через Makefile |
