@@ -176,6 +176,68 @@
       </div>
     </div>
 
+    <!-- ── Manager+Admin: Upload document panel ──────────────────────────────── -->
+    <div id="ingestPanel" class="hidden">
+      <hr class="border-slate-200 my-2">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div class="flex items-center justify-between mb-5">
+          <div>
+            <p class="font-semibold text-slate-700">Загрузить документ</p>
+            <p class="text-xs text-slate-400">Один Markdown-документ → Qdrant + Neo4j (access_level обязателен)</p>
+          </div>
+          <span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full font-medium">Manager / Admin</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">doc_id <span class="text-red-400">*</span></label>
+            <input id="ingestDocId" type="text" placeholder="hr-policy-003"
+              class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Уровень доступа <span class="text-red-400">*</span></label>
+            <select id="ingestLevel"
+              class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 cursor-pointer">
+              <option value="1">1 — Junior</option>
+              <option value="2">2 — Middle</option>
+              <option value="3" selected>3 — Senior</option>
+              <option value="4">4 — Manager</option>
+              <option value="5">5 — Admin</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Тип документа</label>
+            <select id="ingestDocType"
+              class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 cursor-pointer">
+              <option value="document">document</option>
+              <option value="policy">policy</option>
+              <option value="standard">standard</option>
+              <option value="guide">guide</option>
+              <option value="procedure">procedure</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-500 mb-1.5">Содержимое (Markdown) <span class="text-red-400">*</span></label>
+          <textarea id="ingestContent" rows="7" placeholder="# Заголовок документа&#10;&#10;Содержимое в формате Markdown..."
+            class="w-full border border-slate-300 rounded-xl px-4 py-3 text-sm font-mono placeholder-slate-400 resize-y
+                   focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow">
+          </textarea>
+        </div>
+        <div class="flex items-center gap-4">
+          <button onclick="uploadDocument()"
+            class="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-medium px-5 py-2.5 rounded-xl
+                   flex items-center gap-2 transition-all shadow-sm text-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Загрузить
+          </button>
+          <div id="ingestStatus" class="text-sm hidden"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Admin: Graph panel ────────────────────────────────────────────────── -->
     <div id="graphPanel" class="hidden">
       <hr class="border-slate-200 my-2">
@@ -261,8 +323,50 @@
 
     // ── Role change ────────────────────────────────────────────────────────────
     function onRoleChange() {
-      const isAdmin = getRole() === 'admin';
+      const role = getRole();
+      const isAdmin = role === 'admin';
+      const canIngest = role === 'admin' || role === 'manager';
       document.getElementById('graphPanel').classList.toggle('hidden', !isAdmin);
+      document.getElementById('ingestPanel').classList.toggle('hidden', !canIngest);
+    }
+
+    // ── Upload single document ─────────────────────────────────────────────────
+    async function uploadDocument() {
+      const docId   = document.getElementById('ingestDocId').value.trim();
+      const level   = parseInt(document.getElementById('ingestLevel').value, 10);
+      const docType = document.getElementById('ingestDocType').value;
+      const content = document.getElementById('ingestContent').value.trim();
+      const statusEl = document.getElementById('ingestStatus');
+
+      if (!docId) { showIngestStatus('error', 'Укажите doc_id.'); return; }
+      if (!content) { showIngestStatus('error', 'Введите содержимое документа.'); return; }
+
+      showIngestStatus('loading', 'Индексация...');
+      try {
+        const resp = await fetch('/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Role': getRole() },
+          body: JSON.stringify({ doc_id: docId, content, access_level: level, doc_type: docType }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          showIngestStatus('error', `HTTP ${resp.status}: ${data.detail ?? resp.statusText}`);
+          return;
+        }
+        showIngestStatus('success',
+          `✅ Готово — ${data.chunks_created} чанков, ${data.graph_nodes_projected} узлов`);
+        document.getElementById('ingestDocId').value = '';
+        document.getElementById('ingestContent').value = '';
+      } catch (e) {
+        showIngestStatus('error', `Ошибка сети: ${e.message}`);
+      }
+    }
+
+    function showIngestStatus(type, msg) {
+      const el = document.getElementById('ingestStatus');
+      el.classList.remove('hidden', 'text-slate-500', 'text-red-500', 'text-green-600');
+      el.classList.add(type === 'error' ? 'text-red-500' : type === 'success' ? 'text-green-600' : 'text-slate-500');
+      el.textContent = msg;
     }
 
     // ── Send query ─────────────────────────────────────────────────────────────

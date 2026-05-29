@@ -39,7 +39,7 @@ from backend.api.schemas import (
 from backend.core.config import Settings, get_settings
 from backend.db.audit_store import count_audit, list_audit, record_audit
 from backend.db.gap_store import count_gaps, list_gaps
-from backend.ingestion.service import ingest_markdown_corpus
+from backend.ingestion.service import ingest_markdown_corpus, ingest_single_document
 from backend.ontology.loader import load_ontology
 from backend.security.rbac import ROLES, require_admin, role_to_access_level
 
@@ -245,11 +245,37 @@ async def ingest(
             detail="Manager or admin role is required to ingest documents.",
         )
     if payload and payload.content:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Single-document ingestion is not implemented yet; use corpus ingestion.",
+        # Single-document ingestion path
+        if not payload.doc_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="doc_id is required for single-document ingestion.",
+            )
+        if payload.access_level is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="access_level is required for single-document ingestion.",
+            )
+        result = await asyncio.to_thread(
+            ingest_single_document,
+            settings,
+            doc_id=payload.doc_id,
+            content=payload.content,
+            access_level=payload.access_level,
+            doc_type=payload.doc_type,
+            last_updated=payload.last_updated,
         )
-    # Run sync corpus ingestion in a thread pool so the event loop stays free
+        return IngestResponse(
+            status="success",
+            message=f"Document '{payload.doc_id}' ingested successfully.",
+            documents_processed=result.documents_processed,
+            chunks_created=result.chunks_created,
+            graph_nodes_projected=result.graph_nodes_projected,
+            graph_edges_projected=result.graph_edges_projected,
+            storage_backend=result.storage_backend,
+        )
+    # Corpus ingestion path (no payload or empty content)
+    # Run sync ingestion in a thread pool so the event loop stays free
     # for concurrent /query and /health requests during ingestion.
     result = await asyncio.to_thread(ingest_markdown_corpus, settings)
     return IngestResponse(
