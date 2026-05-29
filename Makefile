@@ -85,6 +85,7 @@ start-vllm:
 			--dtype float16 \
 			--max-model-len 8192 \
 			--gpu-memory-utilization 0.85 \
+			--guided-decoding-backend lm-format-enforcer \
 			>> $(LOG_VLLM) 2>&1 & echo $$! > $(PID_VLLM); \
 		echo "  ✅ vLLM запущен (PID $$(cat $(PID_VLLM)), прогрев ~3 мин)"; \
 	fi
