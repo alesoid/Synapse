@@ -1,84 +1,74 @@
 ```mermaid
-flowchart TD
-    subgraph USER["User Channel"]
-        U["Сотрудник\nX-User-Role: junior"]
+flowchart LR
+    subgraph USER["Пользователь"]
+        U["Сотрудник\nроль в заголовке"]
     end
 
-    subgraph API["API Layer (FastAPI) — security boundary"]
-        VALIDATOR["QueryRequest.strip_and_guard_query\nFR-26 injection block → HTTP 422\nFR-25a/b/c PII mask → pass-through"]
-        RBAC["role_to_access_level()\naccess_level 1–5"]
+    subgraph API["API"]
+        GUARD["InputGuard\nпроверка запроса"]
+        RBAC["RBAC\nроль -> уровень доступа"]
     end
 
-    subgraph CP["LangGraph Agent Pipeline (graph_agent.py) — 11 нод"]
-        PQ["prepare_query\nstrip + entity extraction (FR-41a)\nпредобработка — НЕ security gate"]
-        QRW["query_rewriter\nLLM: вопрос → поисковые термины\nулучшение recall векторного поиска"]
+    subgraph AGENT["LangGraph Q&A pipeline"]
+        PREP["prepare_query\nсущности"]
+        REWRITE["query_rewriter\nпоисковый запрос"]
 
-        subgraph PARALLEL["Параллельный retrieval — LangGraph Send() (FR-45)"]
-            VR["vector_retriever\nQdrant + RBAC filter\n(использует query_rewritten)"]
-            GR["graph_retriever\nNeo4j + COALESCE RBAC WHERE\n(использует entities)"]
+        subgraph RETRIEVAL["Параллельный поиск"]
+            VEC["vector_retriever\nQdrant"]
+            GRAPH["graph_retriever\nNeo4j"]
         end
 
-        MR["merge_results\nRRF: alpha/(k+rank_v) + graph_signal/(k+rank_g) (FR-45)"]
-        RC["role_context\nдетерминированный role_hint\nL1–L5 → фокус ответа"]
-        GEN["generator\nVLLMClient / MockLLMClient\nsystem_prompt + role_hint + context"]
-        CRIT["critic\nVLLMCriticAgent few-shot / MockCriticAgent\nquality_score 1.0–4.0 (FR-47a/b)"]
-        CS["confidence_score\navg(1 − age_days/365) (FR-36a)"]
-        OG["output_guard\nPII mask на ответе LLM (FR-27)"]
-        KG["knowledge_gap\nзапись пробела (FR-31)"]
+        MERGE["merge_results\nсвод источников"]
+        ROLE["role_context\nконтекст роли"]
+        GEN["generator\nответ"]
+        CRITIC["critic\nоценка качества"]
+        ROUTE["confidence_score\nмаршрутизация"]
+        OUT["output_guard\nмаскировка ответа"]
+        GAP["knowledge_gap\nпробел знаний"]
     end
 
-    subgraph DP["Data Plane"]
-        EMB["Embedding Service\nnomic-embed-text / mock\n(внутри vector_retriever)"]
-        VLLM["vLLM Engine\nQwen2.5-14B-AWQ"]
-        QD[("Qdrant\nRBAC: payload filter access_level ≤ user")]
-        N4J[("Neo4j\nRBAC: COALESCE(n.access_level,1) ≤ $lvl")]
-        SQLITE[("SQLite WAL\nknowledge_gaps.db")]
+    subgraph DATA["Data Plane"]
+        EMB["Embedding Service"]
+        QD[("Qdrant")]
+        N4J[("Neo4j")]
+        SQLITE[("SQLite")]
+        LLM["vLLM / Mock LLM"]
     end
 
     subgraph OBS["Observability"]
-        LF["Langfuse\nCallbackHandler → трейсы LangGraph нод"]
-        PROM["Prometheus\ntokens/sec · latency · gaps count"]
+        LF["Langfuse"]
+        PROM["Prometheus"]
     end
 
-    U -->|"вопрос + X-User-Role"| VALIDATOR
-    VALIDATOR -->|"blocked → HTTP 422"| U
-    VALIDATOR -->|"masked query"| RBAC
-    RBAC -->|"query + access_level"| PQ
+    U -->|"вопрос"| GUARD
+    GUARD -->|"разрешён"| RBAC
+    GUARD -->|"заблокирован"| U
+    RBAC --> PREP
 
-    PQ -->|"entities"| QRW
-    QRW -->|"Send() — параллельно\n(query_rewritten)"| VR
-    QRW -->|"Send() — параллельно\n(entities)"| GR
+    PREP --> REWRITE
+    REWRITE --> VEC
+    REWRITE --> GRAPH
+    VEC --> MERGE
+    GRAPH --> MERGE
+    MERGE --> ROLE
+    ROLE --> GEN
+    GEN --> CRITIC
+    CRITIC --> ROUTE
 
-    VR -->|"embed query (inside retriever)"| EMB
-    EMB -->|"вектор [768]"| VR
-    VR -->|"vector search + payload filter"| QD
-    QD -->|"Top-K чанков"| VR
-    VR -->|"vector_chunks"| MR
+    ROUTE -->|"ответ принят"| OUT
+    ROUTE -->|"нужен повтор"| GEN
+    ROUTE -->|"ответа нет"| GAP
 
-    GR -->|"MATCH traversal\n+ RBAC WHERE"| N4J
-    N4J -->|"связанные сущности"| GR
-    GR -->|"graph_results"| MR
+    GAP --> SQLITE
+    GAP --> U
+    OUT --> U
 
-    MR -->|"sources"| RC
-    RC -->|"role_hint + sources"| GEN
-    GEN -->|"system_prompt + role_hint + context"| VLLM
-    VLLM -->|"ответ"| GEN
-    GEN -->|"answer + trace_id"| CRIT
-    CRIT -->|"quality_score"| CS
+    VEC -.-> EMB
+    VEC -.-> QD
+    GRAPH -.-> N4J
+    GEN -.-> LLM
 
-    CS -->|"quality < 3.0 AND iter < 3\ngenerator-only retry: Send() (FR-48a)"| GEN
-    CS -->|"quality < 2.0\nпосле max iterations"| KG
-    CS -->|"quality ≥ 3.0\nили quality ≥ 2.0 после max iter"| OG
-
-    KG -->|"INSERT gap"| SQLITE
-    KG -->|"gap_detected=True"| U
-
-    OG -->|"masked answer + sources\n+ quality_score + confidence_score"| U
-
-    GEN --> LF
-    CRIT --> LF
-    OG --> LF
-    KG --> LF
-    VR --> PROM
+    AGENT --> LF
+    API --> PROM
     GEN --> PROM
 ```
