@@ -128,6 +128,23 @@ _kill:
 .PHONY: restart
 restart: stop start
 
+.PHONY: restart-gpu   # полный перезапуск: зависимости + gpu-стек + индексация
+restart-gpu:
+	@echo "▶ Установка зависимостей..."
+	@.venv/bin/pip install -e ".[dev,observability]" -q
+	@echo "  ✅ Зависимости установлены"
+	@$(MAKE) stop
+	@$(MAKE) start-qdrant
+	@$(MAKE) start-neo4j
+	@$(MAKE) start-vllm
+	@$(MAKE) start-api
+	@echo "▶ Индексация корпуса..."
+	@sleep 3
+	@curl -sf -X POST http://localhost:$(API_PORT)/ingest \
+		-H "X-User-Role: admin" \
+		-H "Content-Type: application/json" | python3 -m json.tool
+	@$(MAKE) status
+
 # ── Статус ────────────────────────────────────────────────────────────────────
 
 .PHONY: status
