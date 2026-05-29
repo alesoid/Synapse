@@ -134,6 +134,9 @@ restart-gpu:
 	@.venv/bin/pip install -e ".[dev,observability]" -q
 	@echo "  ✅ Зависимости установлены"
 	@$(MAKE) stop
+	@echo "▶ Очистка Qdrant storage..."
+	@rm -rf storage/collections/
+	@echo "  ✅ Storage очищен"
 	@$(MAKE) start-qdrant
 	@$(MAKE) start-neo4j
 	@$(MAKE) start-vllm
