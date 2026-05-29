@@ -101,85 +101,66 @@ components:
 
     IngestRequest:
       type: object
-      required: [doc_id, doc_type, access_level, last_updated, content]
+      description: |
+        Тело запроса опционально. Без тела — batch-режим (весь корпус из docs/corpus/).
+        С телом (doc_id + content + access_level) — single-doc режим (один Markdown-документ).
       properties:
         doc_id:
           type: string
-          description: Уникальный идентификатор документа
+          description: Уникальный идентификатор документа (обязателен для single-doc)
           example: "arch-001"
-        doc_type:
+        content:
           type: string
-          enum: [standard, adr, policy, onboarding, technical, hr]
-          description: Тип документа
-          example: "adr"
+          description: Текстовое содержимое документа в Markdown. Single-doc only.
+          example: "# ADR-001\n\nИспользуем vLLM для инференса..."
         access_level:
           type: integer
           minimum: 1
           maximum: 5
-          description: Минимальный уровень доступа для просмотра документа
+          description: Минимальный уровень доступа (1–5). Задаётся оператором вручную.
           example: 3
+        doc_type:
+          type: string
+          description: Тип документа
+          default: "document"
+          example: "document"
         last_updated:
           type: string
           format: date
-          description: Дата последнего обновления документа
+          description: Дата последнего обновления (ISO 8601). По умолчанию — сегодня.
           example: "2025-11-01"
-        content:
-          type: string
-          description: |
-            Текстовое содержимое документа (plain text или Markdown).
-            Для бинарных форматов (PDF, DOCX, XLSX) передавайте base64-encoded файл через `file_base64`.
-          example: "# ADR-001\n\nИспользуем vLLM для инференса..."
-        file_base64:
-          type: string
-          format: byte
-          description: Base64-encoded файл (PDF / DOCX / XLSX). Альтернатива полю `content`.
-        file_mime:
-          type: string
-          description: MIME-тип файла при использовании `file_base64`
-          example: "application/pdf"
-        source:
-          type: string
-          description: Источник / путь к оригинальному файлу
-          example: "docs/ADR/ADR-001.md"
 
     IngestResponse:
       type: object
-      required: [doc_id, status, chunks_created, nodes_created, extraction_source]
+      required: [status, message, documents_processed, chunks_created, graph_nodes_projected, graph_edges_projected, storage_backend]
       properties:
-        doc_id:
-          type: string
-          example: "arch-001"
         status:
           type: string
-          enum: [success, partial, failed]
+          enum: [success, accepted]
           example: "success"
+        message:
+          type: string
+          example: "Markdown corpus ingestion completed."
+        documents_processed:
+          type: integer
+          description: Количество обработанных документов
+          example: 15
         chunks_created:
           type: integer
           description: Количество чанков, записанных в Qdrant
-          example: 24
-        nodes_created:
+          example: 262
+        graph_nodes_projected:
           type: integer
           description: Количество узлов, добавленных в Neo4j
-          example: 11
-        relations_created:
+          example: 346
+        graph_edges_projected:
           type: integer
           description: Количество рёбер, добавленных в Neo4j
-          example: 8
-        extraction_source:
+          example: 1654
+        storage_backend:
           type: string
-          enum: [native, ocr, vision]
-          description: Способ извлечения текста
-          example: "native"
-        token_count:
-          type: integer
-          description: Итоговый объём токенов после очистки
-          example: 4820
-        warnings:
-          type: array
-          items:
-            type: string
-          description: Некритичные предупреждения при обработке
-          example: []
+          description: Используемый storage backend
+          example: "qdrant-neo4j"
 
     # --- Query ---
 
@@ -190,17 +171,15 @@ components:
         query:
           type: string
           minLength: 3
-          maxLength: 2000
+          maxLength: 1000
           description: Вопрос на русском языке
           example: "Какую модель embeddings использует Synapse и почему?"
-        session_id:
-          type: string
-          description: Идентификатор сессии для сохранения контекста диалога (опционально, Scale-этап)
-          example: "ses-abc123"
         stream:
           type: boolean
-          default: true
-          description: Использовать Server-Sent Events для потоковой передачи ответа
+          default: false
+          description: |
+            Зарезервировано. В MVP всегда false — ответ возвращается одним JSON-блоком.
+            Typing-анимация реализована на стороне UI.
 
     QueryResponse:
       type: object
@@ -219,28 +198,29 @@ components:
           type: number
           format: float
           minimum: 1
-          maximum: 5
-          description: Оценка CriticAgent (LLM-as-a-Judge), 1–5
+          maximum: 4
+          description: Оценка CriticAgent (LLM-as-a-Judge), 1.0–4.0
           example: 4.2
         confidence_score:
           type: number
           format: float
           minimum: 0
           maximum: 1
-          description: "Актуальность источников: 1 - (age_days / 365), усреднённая по источникам"
+          description: "Актуальность источников: avg(1 - age_days/365) по источникам"
           example: 0.87
         gap_detected:
           type: boolean
           description: Флаг — запрос зафиксирован как Knowledge Gap
           example: false
-        iterations:
-          type: integer
-          description: Количество выполненных retry-итераций CriticAgent
-          example: 1
         trace_id:
           type: string
           description: ID трейса в Langfuse для отладки
           example: "trace-7f4a2b9e"
+        critic_feedback:
+          type: string
+          nullable: true
+          description: Краткая оценка качества от CriticAgent (одно предложение)
+          example: "Ответ полностью подкреплён источниками и релевантен вопросу."
 
     SourceReference:
       type: object
