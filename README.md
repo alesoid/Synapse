@@ -72,6 +72,32 @@ curl -X POST http://localhost:8000/query \
   -d '{"query": "Кто отвечает за выдачу IT-доступов при онбординге?"}'
 ```
 
+### Добавление документов
+
+**Batch (весь корпус из папки):**
+```bash
+# Положить .md или born-digital .pdf в docs/corpus/
+# Добавить запись в docs/corpus/corpus_manifest.json
+# Затем переиндексировать:
+curl -X POST http://localhost:8000/ingest -H "X-User-Role: admin"
+```
+
+**Single-doc (один документ Markdown-текстом):**
+```bash
+curl -X POST http://localhost:8000/ingest \
+  -H "X-User-Role: manager" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doc_id": "my-doc-001",
+    "content": "# Заголовок\n\nТекст документа в Markdown.",
+    "access_level": 3,
+    "doc_type": "document"
+  }'
+```
+
+> `access_level` задаётся оператором вручную (1–5). Файловый upload через браузер — Scale-этап.
+> Поддерживаемые форматы в batch-режиме: `.md`, born-digital `.pdf`. Скан и DOCX — Scale.
+
 ### local-lite (Docker)
 
 ```bash
@@ -146,7 +172,7 @@ synapse/
 │   ├── eval_rbac.py          # RBAC leakage tester (цель 0%)
 │   ├── eval_comparison.py    # GraphRAG vs vector-only
 │   └── load_test.py          # Async load test (P50/P95/P99)
-├── tests/               # 38 unit + integration тестов
+├── tests/               # 46 unit + integration тестов
 └── docs/
     ├── CONCEPT.md
     ├── TECHNICAL_SPEC.md
