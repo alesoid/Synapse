@@ -146,6 +146,8 @@ restart-gpu:
 	@curl -sf -X POST http://localhost:$(API_PORT)/ingest \
 		-H "X-User-Role: admin" \
 		-H "Content-Type: application/json" | python3 -m json.tool
+	@echo "⏳ Ожидание готовности vLLM (до 5 мин)..."
+	@timeout 300 bash -c 'until curl -sf http://localhost:$(VLLM_PORT)/health > /dev/null 2>&1; do printf "."; sleep 10; done' && echo "" || echo "\n  ⚠️  vLLM не ответил за 5 мин — проверьте make logs-vllm"
 	@$(MAKE) status
 
 # ── Статус ────────────────────────────────────────────────────────────────────
@@ -170,6 +172,10 @@ status:
 .PHONY: logs
 logs:
 	@tail -f $(LOG_API)
+
+.PHONY: logs-vllm
+logs-vllm:
+	@tail -f $(LOG_VLLM)
 
 .PHONY: logs-all
 logs-all:
