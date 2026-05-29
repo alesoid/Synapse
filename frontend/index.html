@@ -293,6 +293,21 @@
 
     function getRole() { return document.getElementById('roleSelect').value; }
 
+    // ── Typing animation ───────────────────────────────────────────────────────
+    function typeAnswer(el, text, speed = 18) {
+      el.textContent = '';
+      if (!text) return;
+      const words = text.split(' ');
+      let i = 0;
+      const timer = setInterval(() => {
+        if (i < words.length) {
+          el.textContent += (i > 0 ? ' ' : '') + words[i++];
+        } else {
+          clearInterval(timer);
+        }
+      }, speed);
+    }
+
     function setLoading(on) {
       const btn = document.getElementById('sendBtn');
       btn.disabled = on;
@@ -430,8 +445,8 @@
       // Gap
       document.getElementById('gapBanner').classList.toggle('hidden', !d.gap_detected);
 
-      // Answer
-      document.getElementById('answerText').textContent = d.answer ?? '';
+      // Answer — typing animation (word by word)
+      typeAnswer(document.getElementById('answerText'), d.answer ?? '');
 
       // Sources
       const sources = d.sources ?? [];
